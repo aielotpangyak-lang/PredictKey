@@ -1,0 +1,175 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && 
+        ((('email' in request.auth.token) && request.auth.token.email != null && request.auth.token.email.toLower() == "aielotpangyak@gmail.com" && request.auth.token.email_verified == true) ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // User profiles
+    match /users {
+      allow list: if isAdmin();
+    }
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow read: if isAdmin();
+      allow create: if isOwner(userId) && 
+        (request.resource.data.role == 'user' || 
+         (request.resource.data.role == 'admin' && ('email' in request.auth.token) && request.auth.token.email != null && request.auth.token.email.toLower() == "aielotpangyak@gmail.com"));
+      allow update: if isAdmin() || 
+                    (isOwner(userId) && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)) ||
+                    (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['walletBalance']));
+    }
+
+    // Public user info
+    match /users_public/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(docId);
+    }
+
+    // Leaderboard
+    match /leaderboard/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() || isOwner(docId);
+      allow update: if isAdmin() || isOwner(docId) || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['walletBalance']));
+      allow delete: if isAdmin() || isOwner(docId);
+    }
+
+    // Settings
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Coupons
+    match /coupons/{couponId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // History
+    match /purchases/{purchaseId} {
+      allow read: if isAdmin();
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && (request.resource.data.status == 'pending' || (request.resource.data.status == 'approved' && (request.resource.data.price == 0 || request.resource.data.utr == 'WALLET_PAYMENT')));
+      allow update: if isAdmin();
+    }
+
+    // Notifications
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow create: if isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // Keys
+    match /keys/{keyId} {
+      allow read: if isAdmin();
+      allow read: if isAuthenticated() && keyId == request.auth.uid + "_active";
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    // Predictions
+    match /predictions/{predictionId} {
+      allow read: if isAdmin();
+      allow read: if isAuthenticated() && hasActiveKey();
+      allow write: if isAdmin();
+    }
+
+    // Plans
+    match /plans/{planId} {
+      allow read: if isAdmin();
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAdmin() || (isAuthenticated() && request.resource.data.userId == request.auth.uid);
+      allow update: if isAdmin() || (isAuthenticated() && request.resource.data.userId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // Master Plans
+    match /masterPlans/{userId} {
+      allow read: if isOwner(userId);
+      allow read: if isAdmin();
+      allow write: if isOwner(userId);
+      allow write: if isAdmin();
+    }
+
+    // Reset Requests
+    match /resetRequests/{requestId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Strategy Requests
+    match /strategyRequests/{requestId} {
+      allow read: if isAdmin();
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && 
+                    request.resource.data.userId == request.auth.uid &&
+                    request.resource.data.requestedStrategy in ['conservative', 'aggressive'] &&
+                    request.resource.data.status == 'pending';
+      allow update: if isAdmin() && request.resource.data.status in ['approved', 'rejected'];
+      allow delete: if isAdmin();
+    }
+
+    // Feedbacks
+    match /feedbacks/{feedbackId} {
+      allow read: if true; // Everyone can read public feedbacks (we'll filter in UI)
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Transactions
+    match /transactions/{transactionId} {
+      allow read: if isAdmin();
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && (request.resource.data.userId == request.auth.uid || request.resource.data.type == 'transfer_in');
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Daily Logins
+    match /dailyLogins/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+
+    // Chat
+    match /chat/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // Referrals
+    match /referrals/{referralId} {
+      allow read: if isAuthenticated() && (resource.data.referrerId == request.auth.uid || resource.data.referredId == request.auth.uid);
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    function hasActiveKey() {
+      return exists(/databases/$(database)/documents/keys/$(request.auth.uid + "_active"));
+    }
+  }
+}

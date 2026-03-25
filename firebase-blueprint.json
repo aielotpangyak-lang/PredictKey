@@ -1,0 +1,81 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "referralCode": { "type": "string" },
+        "referredBy": { "type": "string" },
+        "referralCount": { "type": "number" },
+        "walletBalance": { "type": "number" },
+        "claimedRewards": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["uid", "email", "role", "createdAt", "referralCode", "referralCount", "walletBalance", "claimedRewards"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "Key purchase request with UTR verification.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "utr": { "type": "string" },
+        "duration": { "type": "string", "enum": ["1w", "10d", "1m"] },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "price": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "utr", "duration", "status", "price", "createdAt"]
+    },
+    "Key": {
+      "title": "Key",
+      "description": "Access key for prediction features.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "keyValue": { "type": "string" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["userId", "keyValue", "expiresAt", "createdAt", "isActive"]
+    },
+    "Prediction": {
+      "title": "Prediction",
+      "description": "Time-bound predictions.",
+      "type": "object",
+      "properties": {
+        "period": { "type": "string" },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["period", "content", "timestamp"]
+    },
+    "Feedback": {
+      "title": "Feedback",
+      "description": "User feedback and rating.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "isPublic": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userEmail", "rating", "comment", "isPublic", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": { "schema": "User", "description": "User profiles." },
+    "/purchases/{purchaseId}": { "schema": "Purchase", "description": "Purchase requests." },
+    "/keys/{keyId}": { "schema": "Key", "description": "Active access keys." },
+    "/predictions/{predictionId}": { "schema": "Prediction", "description": "Predictions data." },
+    "/feedbacks/{feedbackId}": { "schema": "Feedback", "description": "User feedbacks." }
+  }
+}
