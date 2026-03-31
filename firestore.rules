@@ -8,7 +8,8 @@ service cloud.firestore {
     
     function isAdmin() {
       return isAuthenticated() && 
-        ((('email' in request.auth.token) && request.auth.token.email != null && request.auth.token.email.toLower() == "aielotpangyak@gmail.com" && request.auth.token.email_verified == true) ||
+        (request.auth.uid == "9ZSa06oPEnXvky3VUTduWxSirjC2" ||
+         (('email' in request.auth.token) && request.auth.token.email != null && request.auth.token.email.toLower() == "aielotpangyak@gmail.com" && request.auth.token.email_verified == true) ||
          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
@@ -22,14 +23,13 @@ service cloud.firestore {
       allow list: if isAdmin();
     }
     match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow read: if isAdmin();
+      allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && 
         (request.resource.data.role == 'user' || 
-         (request.resource.data.role == 'admin' && ('email' in request.auth.token) && request.auth.token.email != null && request.auth.token.email.toLower() == "aielotpangyak@gmail.com"));
+         (request.resource.data.role == 'admin' && (request.auth.uid == "9ZSa06oPEnXvky3VUTduWxSirjC2" || (('email' in request.auth.token) && request.auth.token.email != null && request.auth.token.email.toLower() == "aielotpangyak@gmail.com"))));
       allow update: if isAdmin() || 
                     (isOwner(userId) && (!('role' in request.resource.data) || request.resource.data.role == resource.data.role)) ||
-                    (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['walletBalance']));
+                    (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['walletBalance', 'isGiveawayEligible', 'withdrawalDetails', 'referralCount', 'claimedRewards']));
     }
 
     // Public user info
@@ -166,6 +166,47 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (resource.data.referrerId == request.auth.uid || resource.data.referredId == request.auth.uid);
       allow create: if isAuthenticated();
       allow update, delete: if isAdmin();
+    }
+
+    // Giveaways
+    match /giveaways/{giveawayId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Staking
+    match /stakes/{stakeId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'returnedAmount']));
+      allow delete: if isAdmin();
+    }
+
+    // Physical Rewards
+    match /physical_rewards/{rewardId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['address', 'status']));
+      allow delete: if isAdmin();
+    }
+
+    // Cricket Matches
+    match /cricketMatches/{matchId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Audit Logs
+    match /audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // Game Settings
+    match /admin_game_settings/{settingId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     function hasActiveKey() {

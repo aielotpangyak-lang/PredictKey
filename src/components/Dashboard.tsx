@@ -8,7 +8,7 @@ import { useAuth } from '../AuthContext';
 import { usePlan } from '../PlanContext';
 import { useTheme } from '../ThemeContext';
 import { processSuccessfulReferral, REFERRAL_REWARDS, claimReferralReward } from '../services/referralService';
-import { Purchase, Prediction, UserProfile, Notification, Coupon, ResetRequest, MasterPlanState, StrategyRequest, Feedback, Plan, Transaction } from '../types';
+import { Purchase, Prediction, UserProfile, Notification, Coupon, ResetRequest, MasterPlanState, StrategyRequest, Feedback, Plan, Transaction, PhysicalReward, CricketMatch } from '../types';
 import { DailyLogin } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -16,6 +16,7 @@ import WalletView from './WalletView';
 import VIPView from './VIPView';
 import GiveawayView from './GiveawayView';
 import SpinWheelView from './SpinWheelView';
+import RewardsView from './RewardsView';
 import StakingView from './StakingView';
 import UserAnalyticsView from './UserAnalyticsView';
 import AISupportView from './AISupportView';
@@ -25,8 +26,14 @@ import PredictionStats from './PredictionStats';
 import ChatRoom from './ChatRoom';
 import GamesView from './GamesView';
 import SocialView from './SocialView';
+import ColorPredictionView from './ColorPredictionView';
+import GameSettingsView from './GameSettingsView';
+import AviatorPredictionView from './AviatorPredictionView';
+import CricketPredictionView from './CricketPredictionView';
+import StockPredictionView from './StockPredictionView';
 import { AnalyticsView } from './AnalyticsView';
 import { FraudDetectionView } from './FraudDetectionView';
+import { GoogleGenAI, Type } from "@google/genai";
 import { 
   CreditCard, 
   Key, 
@@ -36,6 +43,7 @@ import {
   CheckCircle2, 
   XCircle, 
   AlertCircle,
+  AlertTriangle,
   ShieldAlert,
   LogOut,
   ChevronRight,
@@ -70,7 +78,16 @@ import {
   Trophy,
   Users,
   Wallet,
-  Award
+  Award,
+  Palette,
+  Plane,
+  BarChart2,
+  BarChart3,
+  Gift,
+  ShoppingBag,
+  Bot,
+  Pencil,
+  Sparkles,
 } from 'lucide-react';
 import { format, addDays, differenceInDays } from 'date-fns';
 import { safeToDate } from '../utils';
@@ -1114,20 +1131,64 @@ const AdminPanel: React.FC<{
   onBack: () => void; 
   profile: UserProfile | null;
   setLatestError: (notif: Notification | null) => void;
-}> = ({ onBack, profile, setLatestError }) => {
+  showToast: (msg: string) => void;
+}> = ({ onBack, profile, setLatestError, showToast }) => {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
+  const [cricketMatches, setCricketMatches] = useState<CricketMatch[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [resetRequests, setResetRequests] = useState<ResetRequest[]>([]);
   const [strategyRequests, setStrategyRequests] = useState<StrategyRequest[]>([]);
   const [feedbacks, setFeedbacks] = useState<Feedback[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [physicalRewards, setPhysicalRewards] = useState<PhysicalReward[]>([]);
   const [paymentSettings, setPaymentSettings] = useState({ upiId: '', merchantName: '' });
+  
+  // New Admin States
+  const [vipRequirements, setVipRequirements] = useState<any>({});
+  const [giveawaySettings, setGiveawaySettings] = useState<any>({});
+  const [spinPrizes, setSpinPrizes] = useState<any[]>([]);
+  const [paidSpinPrizes, setPaidSpinPrizes] = useState<any[]>([]);
+  const [editingSpinMode, setEditingSpinMode] = useState<'free' | 'paid'>('free');
+  const [stakingVaultSettings, setStakingVaultSettings] = useState<any>({});
+  const [analyticsSettings, setAnalyticsSettings] = useState<any>({});
+  const [purchaseSettings, setPurchaseSettings] = useState<any>({});
+  const [referralSettings, setReferralSettings] = useState<any>({});
+  const [leaderboardSettings, setLeaderboardSettings] = useState<any>({});
+  const [achievementSettings, setAchievementSettings] = useState<any>({});
+  const [rewardSettings, setRewardSettings] = useState<any>({});
+  const [talkSettings, setTalkSettings] = useState<any>({});
+  const [aiSupportSettings, setAiSupportSettings] = useState<any>({});
+  const [appSettings, setAppSettings] = useState<any>({});
+  const [editingSpinPrize, setEditingSpinPrize] = useState<{index: number, name: string, chance: number} | null>(null);
+  const [selectedUserForEdit, setSelectedUserForEdit] = useState<any>(null);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(true);
+  const [tabLoading, setTabLoading] = useState(false);
   const [dailyRewardClaimed, setDailyRewardClaimed] = useState(false);
   const [newPred, setNewPred] = useState({ period: '', content: '' });
+  const [newCricketMatch, setNewCricketMatch] = useState({
+    team1: '',
+    team2: '',
+    team1Logo: '',
+    team2Logo: '',
+    venue: '',
+    league: '',
+    matchTime: '',
+    winProbability1: 50,
+    winProbability2: 50,
+    topBatsman: '',
+    topBowler: '',
+    tossPrediction: '',
+    expectedScoreRange: '',
+    whoWillWin: '',
+    playingXI1: '',
+    playingXI2: ''
+  });
+
+  const [isGeneratingPrediction, setIsGeneratingPrediction] = useState(false);
 
   useEffect(() => {
     if (!auth.currentUser || !profile) return;
@@ -1153,9 +1214,9 @@ const AdminPanel: React.FC<{
           await updateDoc(doc(db, 'users', auth.currentUser!.uid), {
             walletBalance: (profile.walletBalance || 0) + 10 * newStreak // Reward based on streak
           });
-          await updateDoc(doc(db, 'leaderboard', auth.currentUser!.uid), {
+          await setDoc(doc(db, 'leaderboard', auth.currentUser!.uid), {
             walletBalance: (profile.walletBalance || 0) + 10 * newStreak // Reward based on streak
-          });
+          }, { merge: true });
           setDailyRewardClaimed(true);
         }
       } else {
@@ -1170,9 +1231,9 @@ const AdminPanel: React.FC<{
         await updateDoc(doc(db, 'users', auth.currentUser!.uid), {
           walletBalance: (profile.walletBalance || 0) + 10
         });
-        await updateDoc(doc(db, 'leaderboard', auth.currentUser!.uid), {
+        await setDoc(doc(db, 'leaderboard', auth.currentUser!.uid), {
           walletBalance: (profile.walletBalance || 0) + 10
-        });
+        }, { merge: true });
         setDailyRewardClaimed(true);
       }
     };
@@ -1181,16 +1242,31 @@ const AdminPanel: React.FC<{
   }, [auth.currentUser, profile]);
   const [newCoupon, setNewCoupon] = useState({ code: '', discountPercent: 10 });
   const [searchQuery, setSearchQuery] = useState('');
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [adminToastMessage, setAdminToastMessage] = useState<string | null>(null);
 
-  const showToast = (msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+  const adminShowToast = (msg: string) => {
+    setAdminToastMessage(msg);
+    setTimeout(() => setAdminToastMessage(null), 3000);
+  };
+
+  const logAdminAction = async (action: string, details: string) => {
+    if (!auth.currentUser) return;
+    try {
+      await addDoc(collection(db, 'audit_logs'), {
+        action,
+        details,
+        adminId: auth.currentUser.uid,
+        adminEmail: auth.currentUser.email,
+        timestamp: serverTimestamp()
+      });
+    } catch (err) {
+      console.error('Failed to log admin action', err);
+    }
   };
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'user'>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [activeTab, setActiveTab] = useState<'predictions' | 'verification' | 'settings' | 'accounts' | 'coupons' | 'admins' | 'resets' | 'strategyRequests' | 'feedbacks' | 'wallet' | 'analytics' | 'fraud' | null>(null);
+  const [activeTab, setActiveTab] = useState<string | null>(null);
   
   const [selectedUserBalance, setSelectedUserBalance] = useState<{ userId: string; balance: number; email: string } | null>(null);
   const [isCheckingBalance, setIsCheckingBalance] = useState(false);
@@ -1271,39 +1347,29 @@ const AdminPanel: React.FC<{
   ];
 
   useEffect(() => {
+    // Fallback timeout to ensure loading screen doesn't hang indefinitely
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 5000);
+
+    // Basic data needed for the menu counts or initial view
     const qP = query(collection(db, 'purchases'), where('status', '==', 'pending'));
-    const qPr = query(collection(db, 'predictions'));
-    const qU = query(collection(db, 'users'));
-    const qC = query(collection(db, 'coupons'));
+    const qT = query(collection(db, 'transactions'), where('status', '==', 'pending'));
     const qR = query(collection(db, 'resetRequests'), where('status', '==', 'pending'));
     const qS = query(collection(db, 'strategyRequests'), where('status', '==', 'pending'));
-    const qF = query(collection(db, 'feedbacks'));
-    const qT = query(collection(db, 'transactions'), where('status', '==', 'pending'));
     
     const unsubP = onSnapshot(qP, (snapshot) => {
       setPurchases(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Purchase)));
+      setLoading(false);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'purchases');
-    });
-    
-    const unsubPr = onSnapshot(qPr, (snapshot) => {
-      setPredictions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Prediction)));
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'predictions');
-    });
-
-    const unsubU = onSnapshot(qU, (snapshot) => {
-      setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile)));
-      setLoading(false);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'users');
       setLoading(false);
     });
 
-    const unsubC = onSnapshot(qC, (snapshot) => {
-      setCoupons(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Coupon)));
+    const unsubT = onSnapshot(qT, (snapshot) => {
+      setTransactions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction)));
     }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'coupons');
+      handleFirestoreError(err, OperationType.LIST, 'transactions');
     });
 
     const unsubR = onSnapshot(qR, (snapshot) => {
@@ -1318,26 +1384,132 @@ const AdminPanel: React.FC<{
       handleFirestoreError(err, OperationType.LIST, 'strategyRequests');
     });
 
-    const unsubF = onSnapshot(qF, (snapshot) => {
-      setFeedbacks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Feedback)));
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'feedbacks');
-    });
-
-    const unsubT = onSnapshot(qT, (snapshot) => {
-      const txs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Transaction));
-      txs.sort((a, b) => {
-        const dateA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
-        const dateB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
-        return dateB - dateA;
-      });
-      setTransactions(txs);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'transactions');
-    });
-
-    return () => { unsubP(); unsubPr(); unsubU(); unsubC(); unsubR(); unsubS(); unsubF(); unsubT(); };
+    return () => { 
+      clearTimeout(timeout); 
+      unsubP(); 
+      unsubT(); 
+      unsubR(); 
+      unsubS(); 
+    };
   }, []);
+
+  // Lazy loading for specific tabs
+  useEffect(() => {
+    if (!activeTab) return;
+    setTabLoading(true);
+
+    let unsubscribe = () => {};
+
+    if (activeTab === 'accounts') {
+      const qU = query(collection(db, 'users'), limit(100));
+      unsubscribe = onSnapshot(qU, (snapshot) => {
+        setAllUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile)));
+        setTabLoading(false);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'users');
+        setTabLoading(false);
+      });
+    } else if (activeTab === 'predictions') {
+      const qPr = query(collection(db, 'predictions'), orderBy('timestamp', 'desc'), limit(50));
+      unsubscribe = onSnapshot(qPr, (snapshot) => {
+        setPredictions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Prediction)));
+        setTabLoading(false);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'predictions');
+        setTabLoading(false);
+      });
+    } else if (activeTab === 'cricket_predictions') {
+      const qCricket = query(collection(db, 'cricketMatches'), orderBy('matchTime', 'desc'));
+      unsubscribe = onSnapshot(qCricket, (snapshot) => {
+        setCricketMatches(snapshot.docs.map(doc => ({ 
+          id: doc.id, 
+          ...doc.data(),
+          time: doc.data().time?.toDate ? doc.data().time.toDate() : new Date(doc.data().time || Date.now())
+        } as CricketMatch)));
+        setTabLoading(false);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'cricketMatches');
+        setTabLoading(false);
+      });
+    } else if (activeTab === 'coupons') {
+      const qC = query(collection(db, 'coupons'));
+      unsubscribe = onSnapshot(qC, (snapshot) => {
+        setCoupons(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Coupon)));
+        setTabLoading(false);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'coupons');
+        setTabLoading(false);
+      });
+    } else if (activeTab === 'feedbacks') {
+      const qF = query(collection(db, 'feedbacks'), orderBy('createdAt', 'desc'), limit(50));
+      unsubscribe = onSnapshot(qF, (snapshot) => {
+        setFeedbacks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Feedback)));
+        setTabLoading(false);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'feedbacks');
+        setTabLoading(false);
+      });
+    } else if (activeTab === 'rewards') {
+      const qRewards = query(collection(db, 'physical_rewards'), orderBy('createdAt', 'desc'));
+      unsubscribe = onSnapshot(qRewards, (snapshot) => {
+        setPhysicalRewards(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PhysicalReward)));
+        setTabLoading(false);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'physical_rewards');
+        setTabLoading(false);
+      });
+    } else if (activeTab === 'security_logs') {
+      const qAudit = query(collection(db, 'audit_logs'), orderBy('timestamp', 'desc'), limit(50));
+      unsubscribe = onSnapshot(qAudit, (snapshot) => {
+        setAuditLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        setTabLoading(false);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'audit_logs');
+        setTabLoading(false);
+      });
+    } else if (activeTab.endsWith('_edit') || activeTab === 'global_config') {
+      // Load settings for edit tabs
+      const settingsToLoad = [
+        'vip', 'giveaway', 'spin', 'staking', 'analytics', 'purchase', 
+        'referral', 'leaderboard', 'achievement', 'reward', 'talk', 'ai_support', 'app'
+      ];
+      
+      const unsubs = settingsToLoad.map(settingId => 
+        onSnapshot(doc(db, 'settings', settingId), (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            switch(settingId) {
+              case 'vip': setVipRequirements(data); break;
+              case 'giveaway': setGiveawaySettings(data); break;
+              case 'spin': 
+                setSpinPrizes(data.freePrizes || data.prizes || []); 
+                setPaidSpinPrizes(data.paidPrizes || []);
+                break;
+              case 'staking': setStakingVaultSettings(data); break;
+              case 'analytics': setAnalyticsSettings(data); break;
+              case 'purchase': setPurchaseSettings(data); break;
+              case 'referral': setReferralSettings(data); break;
+              case 'leaderboard': setLeaderboardSettings(data); break;
+              case 'achievement': setAchievementSettings(data); break;
+              case 'reward': setRewardSettings(data); break;
+              case 'talk': setTalkSettings(data); break;
+              case 'ai_support': setAiSupportSettings(data); break;
+              case 'app': setAppSettings(data); break;
+            }
+          }
+          setTabLoading(false);
+        }, (err) => {
+          handleFirestoreError(err, OperationType.GET, `settings/${settingId}`);
+          setTabLoading(false);
+        })
+      );
+      unsubscribe = () => unsubs.forEach(u => u());
+    } else {
+      setTabLoading(false);
+    }
+
+    return () => unsubscribe();
+  }, [activeTab]);
 
   const filteredUsers = allUsers.filter(u => {
     const matchesSearch = u.email.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -1383,6 +1555,7 @@ const AdminPanel: React.FC<{
     try {
       await updateDoc(doc(db, 'users', userId), { isBlocked: !isBlocked });
       showToast(isBlocked ? 'User unblocked successfully' : 'User Banned temporary successful');
+      logAdminAction('TOGGLE_BLOCK_USER', `${isBlocked ? 'Unblocked' : 'Blocked'} user ${userId}`);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, path);
     }
@@ -1630,6 +1803,486 @@ const AdminPanel: React.FC<{
     }
   };
 
+  const generateCricketPrediction = async () => {
+    if (!newCricketMatch.venue || !newCricketMatch.matchTime || !newCricketMatch.playingXI1 || !newCricketMatch.playingXI2) {
+      adminShowToast('Please fill Venue, Time, and Playing XIs first');
+      return;
+    }
+
+    setIsGeneratingPrediction(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const model = 'gemini-3-flash-preview';
+      
+      const prompt = `
+        Analyze this upcoming cricket match and provide predictions in JSON format.
+        Venue: ${newCricketMatch.venue}
+        Time: ${newCricketMatch.matchTime}
+        Team 1 Playing XI: ${newCricketMatch.playingXI1}
+        Team 2 Playing XI: ${newCricketMatch.playingXI2}
+
+        Based on the Playing XI, identify the Team Names.
+        Provide:
+        1. team1Name (string)
+        2. team2Name (string)
+        3. winProbability1 (number, 0-100)
+        4. winProbability2 (number, 0-100)
+        5. topBatsman (string, name of player from either team)
+        6. topBowler (string, name of player from either team)
+        7. tossPrediction (string, team name)
+        8. expectedScoreRange (string, e.g. "160-180")
+        9. whoWillWin (string, team name)
+        10. league (string, e.g. "IPL 2026" or "International T20")
+
+        Return ONLY the JSON.
+      `;
+
+      const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              team1Name: { type: Type.STRING },
+              team2Name: { type: Type.STRING },
+              winProbability1: { type: Type.NUMBER },
+              winProbability2: { type: Type.NUMBER },
+              topBatsman: { type: Type.STRING },
+              topBowler: { type: Type.STRING },
+              tossPrediction: { type: Type.STRING },
+              expectedScoreRange: { type: Type.STRING },
+              whoWillWin: { type: Type.STRING },
+              league: { type: Type.STRING }
+            },
+            required: ["team1Name", "team2Name", "winProbability1", "winProbability2", "topBatsman", "topBowler", "tossPrediction", "expectedScoreRange", "whoWillWin", "league"]
+          }
+        }
+      });
+
+      const result = JSON.parse(response.text);
+      
+      setNewCricketMatch(prev => ({
+        ...prev,
+        team1: result.team1Name,
+        team2: result.team2Name,
+        winProbability1: result.winProbability1,
+        winProbability2: result.winProbability2,
+        topBatsman: result.topBatsman,
+        topBowler: result.topBowler,
+        tossPrediction: result.tossPrediction,
+        expectedScoreRange: result.expectedScoreRange,
+        whoWillWin: result.whoWillWin,
+        league: result.league
+      }));
+
+      adminShowToast('AI Prediction generated successfully!');
+    } catch (err) {
+      console.error('AI Generation Error:', err);
+      adminShowToast('Failed to generate AI prediction');
+    } finally {
+      setIsGeneratingPrediction(false);
+    }
+  };
+
+  const addCricketMatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const path = 'cricketMatches';
+    try {
+      await addDoc(collection(db, path), {
+        teams: [
+          { 
+            name: newCricketMatch.team1, 
+            logo: newCricketMatch.team1Logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(newCricketMatch.team1)}&background=random&color=fff&size=128`,
+            playingXI: newCricketMatch.playingXI1.split(',').map(p => p.trim())
+          },
+          { 
+            name: newCricketMatch.team2, 
+            logo: newCricketMatch.team2Logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(newCricketMatch.team2)}&background=random&color=fff&size=128`,
+            playingXI: newCricketMatch.playingXI2.split(',').map(p => p.trim())
+          }
+        ],
+        venue: newCricketMatch.venue,
+        league: newCricketMatch.league,
+        time: new Date(newCricketMatch.matchTime),
+        status: 'upcoming',
+        isLive: false,
+        predictions: {
+          winProbability: {
+            [newCricketMatch.team1]: Number(newCricketMatch.winProbability1),
+            [newCricketMatch.team2]: Number(newCricketMatch.winProbability2)
+          },
+          topBatsman: newCricketMatch.topBatsman,
+          topBowler: newCricketMatch.topBowler,
+          tossPrediction: newCricketMatch.tossPrediction,
+          expectedScoreRange: newCricketMatch.expectedScoreRange,
+          whoWillWin: newCricketMatch.whoWillWin
+        },
+        createdAt: serverTimestamp()
+      });
+      setNewCricketMatch({
+        team1: '',
+        team2: '',
+        team1Logo: '',
+        team2Logo: '',
+        venue: '',
+        league: '',
+        matchTime: '',
+        winProbability1: 50,
+        winProbability2: 50,
+        topBatsman: '',
+        topBowler: '',
+        tossPrediction: '',
+        expectedScoreRange: '',
+        whoWillWin: '',
+        playingXI1: '',
+        playingXI2: ''
+      });
+      adminShowToast('Cricket match added successfully');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, path);
+    }
+  };
+
+  const seedIPL2026Matches = async () => {
+    try {
+      setTabLoading(true);
+      const matches = [
+        {
+          teams: [
+            { name: 'KKR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/KKR/Logos/Logo+Entity/KKR_Logo.png' },
+            { name: 'SRH', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/SRH/Logos/Logo+Entity/SRH_Logo.png' }
+          ],
+          venue: 'Eden Gardens, Kolkata',
+          league: 'IPL 2026',
+          time: new Date('2026-03-28T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'KKR': 55, 'SRH': 45 },
+            topBatsman: 'Shreyas Iyer',
+            topBowler: 'Mitchell Starc',
+            tossPrediction: 'KKR to win toss and bowl',
+            expectedScoreRange: '175 - 195',
+            whoWillWin: 'KKR'
+          }
+        },
+        {
+          teams: [
+            { name: 'PBKS', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/PBKS/Logos/Logo+Entity/PBKS_Logo.png' },
+            { name: 'DC', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/DC/Logos/Logo+Entity/DC_Logo.png' }
+          ],
+          venue: 'Mullanpur Stadium, Chandigarh',
+          league: 'IPL 2026',
+          time: new Date('2026-03-29T15:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'PBKS': 48, 'DC': 52 },
+            topBatsman: 'Rishabh Pant',
+            topBowler: 'Kagiso Rabada',
+            tossPrediction: 'DC to win toss and bowl',
+            expectedScoreRange: '165 - 185',
+            whoWillWin: 'DC'
+          }
+        },
+        {
+          teams: [
+            { name: 'RR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RR/Logos/Logo+Entity/RR_Logo.png' },
+            { name: 'LSG', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/LSG/Logos/Logo+Entity/LSG_Logo.png' }
+          ],
+          venue: 'Sawai Mansingh Stadium, Jaipur',
+          league: 'IPL 2026',
+          time: new Date('2026-03-29T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'RR': 51, 'LSG': 49 },
+            topBatsman: 'Jos Buttler',
+            topBowler: 'Yuzvendra Chahal',
+            tossPrediction: 'RR to win toss and bat',
+            expectedScoreRange: '170 - 190',
+            whoWillWin: 'RR'
+          }
+        },
+        {
+          teams: [
+            { name: 'GT', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/GT/Logos/Logo+Entity/GT_Logo.png' },
+            { name: 'MI', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/MI/Logos/Logo+Entity/MI_Logo.png' }
+          ],
+          venue: 'Narendra Modi Stadium, Ahmedabad',
+          league: 'IPL 2026',
+          time: new Date('2026-03-30T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'GT': 47, 'MI': 53 },
+            topBatsman: 'Suryakumar Yadav',
+            topBowler: 'Jasprit Bumrah',
+            tossPrediction: 'MI to win toss and bowl',
+            expectedScoreRange: '180 - 200',
+            whoWillWin: 'MI'
+          }
+        },
+        {
+          teams: [
+            { name: 'RCB', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RCB/Logos/Logo+Entity/RCB_Logo.png' },
+            { name: 'CSK', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/CSK/Logos/Logo+Entity/CSK_Logo.png' }
+          ],
+          venue: 'M. Chinnaswamy Stadium, Bengaluru',
+          league: 'IPL 2026',
+          time: new Date('2026-03-31T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'RCB': 50, 'CSK': 50 },
+            topBatsman: 'Virat Kohli',
+            topBowler: 'Ravindra Jadeja',
+            tossPrediction: 'RCB to win toss and bowl',
+            expectedScoreRange: '190 - 210',
+            whoWillWin: 'RCB'
+          }
+        },
+        {
+          teams: [
+            { name: 'SRH', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/SRH/Logos/Logo+Entity/SRH_Logo.png' },
+            { name: 'MI', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/MI/Logos/Logo+Entity/MI_Logo.png' }
+          ],
+          venue: 'Rajiv Gandhi Intl. Stadium, Hyderabad',
+          league: 'IPL 2026',
+          time: new Date('2026-04-01T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'SRH': 49, 'MI': 51 },
+            topBatsman: 'Heinrich Klaasen',
+            topBowler: 'Pat Cummins',
+            tossPrediction: 'SRH to win toss and bowl',
+            expectedScoreRange: '185 - 205',
+            whoWillWin: 'MI'
+          }
+        },
+        {
+          teams: [
+            { name: 'KKR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/KKR/Logos/Logo+Entity/KKR_Logo.png' },
+            { name: 'RCB', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RCB/Logos/Logo+Entity/RCB_Logo.png' }
+          ],
+          venue: 'Eden Gardens, Kolkata',
+          league: 'IPL 2026',
+          time: new Date('2026-04-02T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'KKR': 52, 'RCB': 48 },
+            topBatsman: 'Phil Salt',
+            topBowler: 'Varun Chakaravarthy',
+            tossPrediction: 'RCB to win toss and bowl',
+            expectedScoreRange: '175 - 195',
+            whoWillWin: 'KKR'
+          }
+        },
+        {
+          teams: [
+            { name: 'DC', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/DC/Logos/Logo+Entity/DC_Logo.png' },
+            { name: 'RR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RR/Logos/Logo+Entity/RR_Logo.png' }
+          ],
+          venue: 'Arun Jaitley Stadium, Delhi',
+          league: 'IPL 2026',
+          time: new Date('2026-04-03T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'DC': 46, 'RR': 54 },
+            topBatsman: 'Yashasvi Jaiswal',
+            topBowler: 'Trent Boult',
+            tossPrediction: 'RR to win toss and bat',
+            expectedScoreRange: '160 - 180',
+            whoWillWin: 'RR'
+          }
+        },
+        {
+          teams: [
+            { name: 'LSG', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/LSG/Logos/Logo+Entity/LSG_Logo.png' },
+            { name: 'PBKS', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/PBKS/Logos/Logo+Entity/PBKS_Logo.png' }
+          ],
+          venue: 'Ekana Stadium, Lucknow',
+          league: 'IPL 2026',
+          time: new Date('2026-04-04T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'LSG': 53, 'PBKS': 47 },
+            topBatsman: 'KL Rahul',
+            topBowler: 'Ravi Bishnoi',
+            tossPrediction: 'LSG to win toss and bowl',
+            expectedScoreRange: '155 - 175',
+            whoWillWin: 'LSG'
+          }
+        },
+        {
+          teams: [
+            { name: 'GT', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/GT/Logos/Logo+Entity/GT_Logo.png' },
+            { name: 'CSK', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/CSK/Logos/Logo+Entity/CSK_Logo.png' }
+          ],
+          venue: 'Narendra Modi Stadium, Ahmedabad',
+          league: 'IPL 2026',
+          time: new Date('2026-04-05T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'GT': 49, 'CSK': 51 },
+            topBatsman: 'Ruturaj Gaikwad',
+            topBowler: 'Rashid Khan',
+            tossPrediction: 'CSK to win toss and bowl',
+            expectedScoreRange: '170 - 190',
+            whoWillWin: 'CSK'
+          }
+        },
+        {
+          teams: [
+            { name: 'MI', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/MI/Logos/Logo+Entity/MI_Logo.png' },
+            { name: 'RR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RR/Logos/Logo+Entity/RR_Logo.png' }
+          ],
+          venue: 'Wankhede Stadium, Mumbai',
+          league: 'IPL 2026',
+          time: new Date('2026-04-06T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'MI': 52, 'RR': 48 },
+            topBatsman: 'Suryakumar Yadav',
+            topBowler: 'Jasprit Bumrah',
+            tossPrediction: 'MI to win toss and bowl',
+            expectedScoreRange: '185 - 205',
+            whoWillWin: 'MI'
+          }
+        },
+        {
+          teams: [
+            { name: 'RCB', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RCB/Logos/Logo+Entity/RCB_Logo.png' },
+            { name: 'LSG', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/LSG/Logos/Logo+Entity/LSG_Logo.png' }
+          ],
+          venue: 'M. Chinnaswamy Stadium, Bengaluru',
+          league: 'IPL 2026',
+          time: new Date('2026-04-07T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'RCB': 54, 'LSG': 46 },
+            topBatsman: 'Virat Kohli',
+            topBowler: 'Mohammed Siraj',
+            tossPrediction: 'RCB to win toss and bowl',
+            expectedScoreRange: '195 - 215',
+            whoWillWin: 'RCB'
+          }
+        },
+        {
+          teams: [
+            { name: 'CSK', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/CSK/Logos/Logo+Entity/CSK_Logo.png' },
+            { name: 'KKR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/KKR/Logos/Logo+Entity/KKR_Logo.png' }
+          ],
+          venue: 'MA Chidambaram Stadium, Chennai',
+          league: 'IPL 2026',
+          time: new Date('2026-04-08T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'CSK': 51, 'KKR': 49 },
+            topBatsman: 'Ruturaj Gaikwad',
+            topBowler: 'Ravindra Jadeja',
+            tossPrediction: 'CSK to win toss and bowl',
+            expectedScoreRange: '165 - 185',
+            whoWillWin: 'CSK'
+          }
+        },
+        {
+          teams: [
+            { name: 'PBKS', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/PBKS/Logos/Logo+Entity/PBKS_Logo.png' },
+            { name: 'GT', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/GT/Logos/Logo+Entity/GT_Logo.png' }
+          ],
+          venue: 'Mullanpur Stadium, Chandigarh',
+          league: 'IPL 2026',
+          time: new Date('2026-04-09T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'PBKS': 47, 'GT': 53 },
+            topBatsman: 'Shubman Gill',
+            topBowler: 'Rashid Khan',
+            tossPrediction: 'GT to win toss and bowl',
+            expectedScoreRange: '170 - 190',
+            whoWillWin: 'GT'
+          }
+        },
+        {
+          teams: [
+            { name: 'SRH', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/SRH/Logos/Logo+Entity/SRH_Logo.png' },
+            { name: 'DC', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/DC/Logos/Logo+Entity/DC_Logo.png' }
+          ],
+          venue: 'Rajiv Gandhi Intl. Stadium, Hyderabad',
+          league: 'IPL 2026',
+          time: new Date('2026-04-10T19:30:00+05:30'),
+          status: 'upcoming',
+          isLive: false,
+          predictions: {
+            winProbability: { 'SRH': 55, 'DC': 45 },
+            topBatsman: 'Travis Head',
+            topBowler: 'Pat Cummins',
+            tossPrediction: 'SRH to win toss and bat',
+            expectedScoreRange: '190 - 210',
+            whoWillWin: 'SRH'
+          }
+        }
+      ];
+
+      for (const match of matches) {
+        await addDoc(collection(db, 'cricketMatches'), match);
+      }
+
+      showToast('IPL 2026 Matches seeded successfully!');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.CREATE, 'cricketMatches');
+    } finally {
+      setTabLoading(false);
+    }
+  };
+
+  const deleteCricketMatch = async (id: string) => {
+    const path = `cricketMatches/${id}`;
+    try {
+      await deleteDoc(doc(db, 'cricketMatches', id));
+      adminShowToast('Cricket match deleted');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, path);
+    }
+  };
+
+  const updateCricketMatchStatus = async (id: string, status: 'upcoming' | 'live' | 'finished') => {
+    const path = `cricketMatches/${id}`;
+    try {
+      await updateDoc(doc(db, 'cricketMatches', id), { 
+        status,
+        isLive: status === 'live'
+      });
+      adminShowToast(`Match marked as ${status}`);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, path);
+    }
+  };
+
+  const updateCricketMatchWhoWillWin = async (id: string, whoWillWin: string) => {
+    const path = `cricketMatches/${id}`;
+    try {
+      await updateDoc(doc(db, 'cricketMatches', id), { 
+        'predictions.whoWillWin': whoWillWin
+      });
+      adminShowToast(`Winner prediction updated`);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, path);
+    }
+  };
+
   const addCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCoupon.code || newCoupon.discountPercent <= 0) return;
@@ -1736,14 +2389,14 @@ const AdminPanel: React.FC<{
   return (
     <div className="space-y-8 relative pb-20">
       <AnimatePresence>
-        {toastMessage && (
+        {adminToastMessage && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
             className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-emerald-500 text-white px-4 py-2 rounded-full shadow-lg font-medium text-sm"
           >
-            {toastMessage}
+            {adminToastMessage}
           </motion.div>
         )}
       </AnimatePresence>
@@ -1767,46 +2420,81 @@ const AdminPanel: React.FC<{
       </div>
 
       {!activeTab ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+        <div className="space-y-8 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
           {[
-            { id: 'verification', label: 'Verification', icon: CheckCircle2, desc: 'Approve pending purchases', count: purchases.length, color: 'text-emerald-500 bg-emerald-500/10' },
-            { id: 'wallet', label: 'Wallet Requests', icon: Wallet, desc: 'Manage deposits and withdrawals', count: transactions.length, color: 'text-teal-500 bg-teal-500/10' },
-            { id: 'settings', label: 'Payment Settings', icon: Settings, desc: 'Manage UPI ID & QR Code', color: 'text-blue-500 bg-blue-500/10' },
-            { id: 'predictions', label: 'Predictions', icon: TrendingUp, desc: 'Post new AI predictions', count: predictions.length, color: 'text-indigo-500 bg-indigo-500/10' },
-            { id: 'accounts', label: 'User Accounts', icon: User, desc: 'View and manage all users', count: allUsers.length, color: 'text-purple-500 bg-purple-500/10' },
-            { id: 'admins', label: 'Admin Management', icon: ShieldCheck, desc: 'Create and manage admins', color: 'text-red-500 bg-red-500/10' },
-            { id: 'coupons', label: 'Coupon Codes', icon: CreditCard, desc: 'Create discount coupons', count: coupons.length, color: 'text-amber-500 bg-amber-500/10' },
-            { id: 'resets', label: 'Reset Requests', icon: RefreshCw, desc: 'Handle plan reset requests', count: resetRequests.length, color: 'text-orange-500 bg-orange-500/10' },
-            { id: 'strategyRequests', label: 'Strategy Requests', icon: Target, desc: 'Approve strategy changes', count: strategyRequests.length, color: 'text-pink-500 bg-pink-500/10' },
-            { id: 'feedbacks', label: 'User Feedbacks', icon: MessageSquare, desc: 'Manage testimonials', count: feedbacks.length, color: 'text-cyan-500 bg-cyan-500/10' },
-            { id: 'giveaway', label: 'Giveaway', icon: Trophy, desc: 'Draw daily winners', color: 'text-pink-500 bg-pink-500/10' },
-            { id: 'analytics', label: 'Analytics', icon: TrendingUp, desc: 'View advanced analytics', color: 'text-indigo-500 bg-indigo-500/10' },
-            { id: 'fraud', label: 'Fraud Detection', icon: ShieldAlert, desc: 'Manage suspicious activities', color: 'text-red-500 bg-red-500/10' },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className="group relative bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-3xl p-6 text-left transition-all hover:border-emerald-500/50 hover:shadow-xl hover:shadow-emerald-500/5 flex flex-col gap-4"
-            >
-              <div className="flex items-center justify-between">
-                <div className={`p-3 rounded-2xl ${tab.color} group-hover:scale-110 transition-transform`}>
-                  <tab.icon size={24} />
-                </div>
-                {tab.count !== undefined && tab.count > 0 && (
-                  <div className="bg-red-500 text-white text-[10px] font-black px-2 py-1 rounded-full shadow-lg shadow-red-500/20">
-                    {tab.count}
-                  </div>
-                )}
+            {
+              title: 'User Management',
+              items: [
+                { id: 'accounts', label: 'User Accounts', icon: User, desc: 'View and manage all users', count: allUsers.length, color: 'text-purple-500 bg-purple-500/10' },
+                { id: 'admins', label: 'Admin Management', icon: ShieldCheck, desc: 'Create and manage admins', color: 'text-red-500 bg-red-500/10' },
+                { id: 'verification', label: 'Verification', icon: CheckCircle2, desc: 'Approve pending purchases', count: purchases.length, color: 'text-emerald-500 bg-emerald-500/10' },
+                { id: 'wallet', label: 'Wallet Requests', icon: Wallet, desc: 'Manage deposits and withdrawals', count: transactions.length, color: 'text-teal-500 bg-teal-500/10' },
+                { id: 'fraud', label: 'Fraud Detection', icon: ShieldAlert, desc: 'Manage suspicious activities', color: 'text-red-500 bg-red-500/10' },
+                { id: 'feedbacks', label: 'User Feedbacks', icon: MessageSquare, desc: 'Manage testimonials', count: feedbacks.length, color: 'text-cyan-500 bg-cyan-500/10' },
+              ]
+            },
+            {
+              title: 'Game & Content Management',
+              items: [
+                { id: 'predictions', label: 'Predictions', icon: TrendingUp, desc: 'Post new AI predictions', count: predictions.length, color: 'text-indigo-500 bg-indigo-500/10' },
+                { id: 'cricket_predictions', label: 'Cricket Predictions', icon: Trophy, desc: 'Manage cricket matches', count: cricketMatches.length, color: 'text-emerald-500 bg-emerald-500/10' },
+                { id: 'coupons', label: 'Coupon Codes', icon: CreditCard, desc: 'Create discount coupons', count: coupons.length, color: 'text-amber-500 bg-amber-500/10' },
+                { id: 'rewards', label: 'Physical Rewards', icon: Gift, desc: 'Manage claimed rewards', count: physicalRewards.filter(r => r.status === 'pending_delivery').length, color: 'text-pink-500 bg-pink-500/10' },
+                { id: 'reward_edit', label: 'Reward Edit', icon: Gift, desc: 'Add rewards to users', color: 'text-pink-500 bg-pink-500/10' },
+                { id: 'giveaway', label: 'Giveaway', icon: Trophy, desc: 'Draw daily winners', color: 'text-pink-500 bg-pink-500/10' },
+                { id: 'giveaway_edit', label: 'Giveaway Edit', icon: Trophy, desc: 'Edit giveaway rules', color: 'text-pink-500 bg-pink-500/10' },
+                { id: 'spin_edit', label: 'Spin & Win Edit', icon: Zap, desc: 'Edit prizes & chances', color: 'text-yellow-500 bg-yellow-500/10' },
+                { id: 'vip_edit', label: 'VIP System Edit', icon: Star, desc: 'Edit VIP requirements', color: 'text-purple-500 bg-purple-500/10' },
+                { id: 'staking_edit', label: 'Staking Vault Edit', icon: ShieldCheck, desc: 'Edit staking percentages', color: 'text-teal-500 bg-teal-500/10' },
+                { id: 'purchase_edit', label: 'Purchase Edit', icon: CreditCard, desc: 'Edit plan prices & discounts', color: 'text-blue-500 bg-blue-500/10' },
+                { id: 'referral_edit', label: 'Refer & Earn Edit', icon: Share2, desc: 'Edit referral rewards', color: 'text-green-500 bg-green-500/10' },
+                { id: 'leaderboard_edit', label: 'Leaderboard Edit', icon: Trophy, desc: 'Edit leaderboard rules', color: 'text-yellow-500 bg-yellow-500/10' },
+                { id: 'achievement_edit', label: 'Achievement Edit', icon: Award, desc: 'Edit achievements', color: 'text-purple-500 bg-purple-500/10' },
+                { id: 'talk_edit', label: 'Talks Edit', icon: MessageSquare, desc: 'Edit welcome message', color: 'text-cyan-500 bg-cyan-500/10' },
+                { id: 'ai_support_edit', label: 'AI Support Edit', icon: MessageSquare, desc: 'Edit system prompt', color: 'text-orange-500 bg-orange-500/10' },
+              ]
+            },
+            {
+              title: 'System & Configuration',
+              items: [
+                { id: 'global_config', label: 'Global Config', icon: Settings, desc: 'App theme, maintenance, toggles', color: 'text-slate-500 bg-slate-500/10' },
+                { id: 'security_logs', label: 'Security & Logs', icon: ShieldAlert, desc: 'Audit logs, login history', color: 'text-red-500 bg-red-500/10' },
+                { id: 'system_override', label: 'System Override', icon: AlertTriangle, desc: 'Super admin powers', color: 'text-rose-500 bg-rose-500/10' },
+                { id: 'settings', label: 'Payment Settings', icon: Settings, desc: 'Manage UPI ID & QR Code', color: 'text-blue-500 bg-blue-500/10' },
+                { id: 'resets', label: 'Reset Requests', icon: RefreshCw, desc: 'Handle plan reset requests', count: resetRequests.length, color: 'text-orange-500 bg-orange-500/10' },
+                { id: 'strategyRequests', label: 'Strategy Requests', icon: Target, desc: 'Approve strategy changes', count: strategyRequests.length, color: 'text-pink-500 bg-pink-500/10' },
+                { id: 'analytics', label: 'Analytics', icon: TrendingUp, desc: 'View advanced analytics', color: 'text-indigo-500 bg-indigo-500/10' },
+                { id: 'analytics_edit', label: 'Analytics Edit', icon: TrendingUp, desc: 'Edit user win rates', color: 'text-indigo-500 bg-indigo-500/10' },
+              ]
+            }
+          ].map((group) => (
+            <div key={group.title} className="space-y-4">
+              <h2 className="text-sm font-black text-slate-400 dark:text-white/40 uppercase tracking-widest">{group.title}</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {group.items.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className="group relative bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-5 text-left transition-all hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/5 flex flex-col gap-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className={`p-2.5 rounded-xl ${tab.color} group-hover:scale-110 transition-transform`}>
+                        <tab.icon size={20} />
+                      </div>
+                      {tab.count !== undefined && tab.count > 0 && (
+                        <div className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-lg shadow-red-500/20">
+                          {tab.count}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white">{tab.label}</h3>
+                      <p className="text-[10px] text-slate-500 dark:text-white/40 line-clamp-1">{tab.desc}</p>
+                    </div>
+                  </button>
+                ))}
               </div>
-              <div>
-                <h3 className="text-lg font-black text-slate-900 dark:text-white mb-1">{tab.label}</h3>
-                <p className="text-xs text-slate-500 dark:text-white/40">{tab.desc}</p>
-              </div>
-              <div className="mt-auto pt-4 flex items-center justify-between border-t border-slate-50 dark:border-white/5 opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Open Section</span>
-                <ChevronRight size={14} className="text-emerald-500" />
-              </div>
-            </button>
+            </div>
           ))}
         </div>
       ) : (
@@ -2002,6 +2690,26 @@ const AdminPanel: React.FC<{
                       placeholder="e.g., Your Business Name"
                     />
                   </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-bold text-white mb-2 block">Min Deposit (₹)</label>
+                      <input
+                        type="number"
+                        value={paymentSettings?.minDeposit || 100}
+                        onChange={(e) => setPaymentSettings(prev => ({ ...prev, minDeposit: Number(e.target.value) }))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-bold text-white mb-2 block">Min Withdrawal (₹)</label>
+                      <input
+                        type="number"
+                        value={paymentSettings?.minWithdrawal || 500}
+                        onChange={(e) => setPaymentSettings(prev => ({ ...prev, minWithdrawal: Number(e.target.value) }))}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
                   <button
                     onClick={savePaymentSettings}
                     className="w-full bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-xl text-sm font-bold transition-all"
@@ -2086,7 +2794,9 @@ const AdminPanel: React.FC<{
             </form>
 
             <div className="grid gap-3">
-              {predictions.length === 0 ? (
+              {tabLoading ? (
+                <div className="flex justify-center py-12"><Clock className="animate-spin text-white/20" size={32} /></div>
+              ) : predictions.length === 0 ? (
                 <div className="text-center py-12 bg-white/5 rounded-2xl border border-dashed border-white/10">
                   <p className="text-white/30">No predictions added yet.</p>
                 </div>
@@ -2098,13 +2808,391 @@ const AdminPanel: React.FC<{
                         {pr.period}
                       </div>
                       <div className="text-white font-bold text-lg">{pr.content}</div>
+                      {pr.status && (
+                        <div className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-widest ${pr.status === 'win' ? 'bg-emerald-500/20 text-emerald-500' : pr.status === 'loss' ? 'bg-red-500/20 text-red-500' : 'bg-yellow-500/20 text-yellow-500'}`}>
+                          {pr.status}
+                        </div>
+                      )}
                     </div>
-                    <button 
-                      onClick={() => deletePrediction(pr.id)}
-                      className="w-10 h-10 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl flex items-center justify-center transition-all border border-red-500/20"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => updateDoc(doc(db, 'predictions', pr.id), { status: 'win' })}
+                        className="w-10 h-10 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500 hover:text-white rounded-xl flex items-center justify-center transition-all border border-emerald-500/20"
+                        title="Mark as Win"
+                      >
+                        <CheckCircle2 size={18} />
+                      </button>
+                      <button 
+                        onClick={() => updateDoc(doc(db, 'predictions', pr.id), { status: 'loss' })}
+                        className="w-10 h-10 bg-orange-500/10 text-orange-500 hover:bg-orange-500 hover:text-white rounded-xl flex items-center justify-center transition-all border border-orange-500/20"
+                        title="Mark as Loss"
+                      >
+                        <AlertTriangle size={18} />
+                      </button>
+                      <button 
+                        onClick={() => deletePrediction(pr.id)}
+                        className="w-10 h-10 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl flex items-center justify-center transition-all border border-red-500/20"
+                        title="Delete Prediction"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'cricket_predictions' && (
+          <motion.section
+            key="cricket_predictions"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-6"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Trophy className="text-emerald-500" /> Cricket Predictions
+              </h3>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={seedIPL2026Matches}
+                  className="text-[10px] font-black uppercase tracking-widest bg-white/5 hover:bg-white/10 text-white/40 hover:text-white px-3 py-2 rounded-lg border border-white/10 transition-all"
+                >
+                  Seed IPL 2026 Matches
+                </button>
+                <div className="text-xs text-white/40 font-bold uppercase tracking-widest">
+                  {cricketMatches.length} Matches
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#151619] border border-white/10 rounded-2xl p-6 space-y-6 shadow-xl">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-bold text-white">Add New Match (Simplified)</h4>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    accept=".json,.csv"
+                    className="hidden"
+                    id="match-import-input"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      
+                      try {
+                        const text = await file.text();
+                        let matchesData: any[] = [];
+                        
+                        if (file.name.endsWith('.json')) {
+                          matchesData = JSON.parse(text);
+                          if (!Array.isArray(matchesData)) {
+                            matchesData = [matchesData];
+                          }
+                        } else if (file.name.endsWith('.csv')) {
+                          // Basic CSV parsing
+                          const lines = text.split('\n');
+                          const headers = lines[0].split(',').map(h => h.trim());
+                          
+                          for (let i = 1; i < lines.length; i++) {
+                            if (!lines[i].trim()) continue;
+                            const values = lines[i].split(',').map(v => v.trim());
+                            const matchObj: any = {};
+                            headers.forEach((h, index) => {
+                              matchObj[h] = values[index];
+                            });
+                            matchesData.push(matchObj);
+                          }
+                        }
+                        
+                        // Process imported matches
+                        for (const match of matchesData) {
+                          // Basic validation
+                          if (match.team1 && match.team2 && match.venue && match.time) {
+                            await addDoc(collection(db, 'cricketMatches'), {
+                              teams: [
+                                { name: match.team1, logo: match.team1Logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(match.team1)}&background=random&color=fff&size=128` },
+                                { name: match.team2, logo: match.team2Logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(match.team2)}&background=random&color=fff&size=128` }
+                              ],
+                              venue: match.venue,
+                              league: match.league || 'Imported Match',
+                              time: new Date(match.time),
+                              status: match.status || 'upcoming',
+                              isLive: match.status === 'live',
+                              predictions: match.predictions || null,
+                              createdAt: serverTimestamp()
+                            });
+                          }
+                        }
+                        
+                        showToast(`Successfully imported ${matchesData.length} matches!`);
+                        // Reset input
+                        e.target.value = '';
+                      } catch (err) {
+                        console.error('Import error:', err);
+                        showToast('Failed to import matches. Check file format.');
+                      }
+                    }}
+                  />
+                  <label
+                    htmlFor="match-import-input"
+                    className="cursor-pointer flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-500/20"
+                  >
+                    <Sparkles size={14} />
+                    Import JSON/CSV
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateCricketPrediction}
+                    disabled={isGeneratingPrediction || !newCricketMatch.venue || !newCricketMatch.matchTime || !newCricketMatch.playingXI1 || !newCricketMatch.playingXI2}
+                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-white/5 disabled:text-white/20 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-500/20"
+                  >
+                    {isGeneratingPrediction ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        Generating AI Prediction...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={14} />
+                        Generate AI Prediction
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Match Time</label>
+                    <input
+                      type="datetime-local"
+                      value={newCricketMatch.matchTime}
+                      onChange={(e) => setNewCricketMatch({ ...newCricketMatch, matchTime: e.target.value })}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Venue</label>
+                    <input
+                      type="text"
+                      value={newCricketMatch.venue}
+                      onChange={(e) => setNewCricketMatch({ ...newCricketMatch, venue: e.target.value })}
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                      placeholder="e.g., MCG, Melbourne"
+                      required
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Team 1 (Optional)</label>
+                      <input
+                        type="text"
+                        value={newCricketMatch.team1}
+                        onChange={(e) => setNewCricketMatch({ ...newCricketMatch, team1: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                        placeholder="Auto-detected"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Team 2 (Optional)</label>
+                      <input
+                        type="text"
+                        value={newCricketMatch.team2}
+                        onChange={(e) => setNewCricketMatch({ ...newCricketMatch, team2: e.target.value })}
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                        placeholder="Auto-detected"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Team 1 Playing XI (Comma separated)</label>
+                    <textarea
+                      value={newCricketMatch.playingXI1}
+                      onChange={(e) => setNewCricketMatch({ ...newCricketMatch, playingXI1: e.target.value })}
+                      className="w-full h-24 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors resize-none text-xs"
+                      placeholder="Player 1, Player 2, ..."
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Team 2 Playing XI (Comma separated)</label>
+                    <textarea
+                      value={newCricketMatch.playingXI2}
+                      onChange={(e) => setNewCricketMatch({ ...newCricketMatch, playingXI2: e.target.value })}
+                      className="w-full h-24 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors resize-none text-xs"
+                      placeholder="Player 1, Player 2, ..."
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {newCricketMatch.whoWillWin && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">AI Generated Prediction</span>
+                    <span className="text-xs font-bold text-white">{newCricketMatch.league}</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div>
+                      <div className="text-[8px] font-black text-white/30 uppercase tracking-widest mb-1">Win Probability</div>
+                      <div className="text-xs font-bold text-white">{newCricketMatch.team1}: {newCricketMatch.winProbability1}% | {newCricketMatch.team2}: {newCricketMatch.winProbability2}%</div>
+                    </div>
+                    <div>
+                      <div className="text-[8px] font-black text-white/30 uppercase tracking-widest mb-1">Top Batsman</div>
+                      <div className="text-xs font-bold text-white">{newCricketMatch.topBatsman}</div>
+                    </div>
+                    <div>
+                      <div className="text-[8px] font-black text-white/30 uppercase tracking-widest mb-1">Top Bowler</div>
+                      <div className="text-xs font-bold text-white">{newCricketMatch.topBowler}</div>
+                    </div>
+                    <div>
+                      <div className="text-[8px] font-black text-white/30 uppercase tracking-widest mb-1">Expected Score</div>
+                      <div className="text-xs font-bold text-white">{newCricketMatch.expectedScoreRange}</div>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-emerald-500/10 flex items-center justify-between">
+                    <div className="text-xs font-bold text-white">Verdict: <span className="text-emerald-400">{newCricketMatch.whoWillWin} will win</span></div>
+                    <div className="text-xs font-bold text-white">Toss: <span className="text-emerald-400">{newCricketMatch.tossPrediction}</span></div>
+                  </div>
+                </motion.div>
+              )}
+
+              <button
+                onClick={addCricketMatch}
+                disabled={!newCricketMatch.team1 || !newCricketMatch.team2 || !newCricketMatch.matchTime}
+                className="w-full bg-white text-black font-black py-4 rounded-xl transition-all hover:bg-white/90 disabled:bg-white/10 disabled:text-white/20 text-sm uppercase tracking-widest"
+              >
+                Save & Publish Match
+              </button>
+            </div>
+
+            <div className="grid gap-4">
+              {tabLoading ? (
+                <div className="flex justify-center py-12"><Clock className="animate-spin text-white/20" size={32} /></div>
+              ) : cricketMatches.length === 0 ? (
+                <div className="text-center py-12 bg-white/5 rounded-2xl border border-dashed border-white/10">
+                  <p className="text-white/30">No cricket matches added yet.</p>
+                </div>
+              ) : (
+                cricketMatches.map((match) => (
+                  <div key={match.id} className="bg-[#151619] border border-white/10 rounded-2xl p-6 flex flex-col gap-4 group hover:border-emerald-500/30 transition-all">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <img src={match.teams[0].logo} alt={match.teams[0].name} className="w-8 h-8 rounded-full bg-white/10 object-cover" />
+                          <span className="text-white font-bold">{match.teams[0].name}</span>
+                        </div>
+                        <span className="text-white/50 font-bold text-sm">VS</span>
+                        <div className="flex items-center gap-2">
+                          <img src={match.teams[1].logo} alt={match.teams[1].name} className="w-8 h-8 rounded-full bg-white/10 object-cover" />
+                          <span className="text-white font-bold">{match.teams[1].name}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-widest ${
+                          match.status === 'live' ? 'bg-red-500/20 text-red-500 animate-pulse' :
+                          match.status === 'finished' ? 'bg-slate-500/20 text-slate-400' :
+                          'bg-emerald-500/20 text-emerald-500'
+                        }`}>
+                          {match.status}
+                        </span>
+                        <div className="flex bg-black/40 rounded-lg p-1">
+                          <button onClick={() => updateCricketMatchStatus(match.id, 'upcoming')} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${match.status === 'upcoming' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white'}`}>Upcoming</button>
+                          <button onClick={() => updateCricketMatchStatus(match.id, 'live')} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${match.status === 'live' ? 'bg-red-500/20 text-red-500' : 'text-white/40 hover:text-white'}`}>Live</button>
+                          <button onClick={() => updateCricketMatchStatus(match.id, 'finished')} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${match.status === 'finished' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white'}`}>Done</button>
+                        </div>
+                        <div className="flex items-center gap-2 bg-black/40 rounded-lg px-2 py-1">
+                          <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Verdict:</span>
+                          <input 
+                            type="text" 
+                            defaultValue={match.predictions?.whoWillWin || ''}
+                            onBlur={(e) => updateCricketMatchWhoWillWin(match.id, e.target.value)}
+                            className="bg-transparent border-none text-[10px] font-bold text-emerald-500 focus:outline-none w-24"
+                            placeholder="Set winner..."
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 bg-black/40 rounded-lg px-2 py-1">
+                          <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Actual:</span>
+                          <input 
+                            type="text" 
+                            defaultValue={match.actualWinner || ''}
+                            onBlur={async (e) => {
+                              try {
+                                await updateDoc(doc(db, 'cricketMatches', match.id), { actualWinner: e.target.value });
+                                showToast('Actual winner updated');
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }}
+                            className="bg-transparent border-none text-[10px] font-bold text-blue-500 focus:outline-none w-24"
+                            placeholder="Actual winner..."
+                          />
+                        </div>
+                        <div className="flex bg-black/40 rounded-lg p-1">
+                          <button onClick={async () => {
+                            try {
+                              await updateDoc(doc(db, 'cricketMatches', match.id), { predictionResult: 'win' });
+                              showToast('Prediction marked as WIN');
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${match.predictionResult === 'win' ? 'bg-emerald-500/20 text-emerald-500' : 'text-white/40 hover:text-white'}`}>Win</button>
+                          <button onClick={async () => {
+                            try {
+                              await updateDoc(doc(db, 'cricketMatches', match.id), { predictionResult: 'loss' });
+                              showToast('Prediction marked as LOSS');
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${match.predictionResult === 'loss' ? 'bg-red-500/20 text-red-500' : 'text-white/40 hover:text-white'}`}>Loss</button>
+                          <button onClick={async () => {
+                            try {
+                              await updateDoc(doc(db, 'cricketMatches', match.id), { predictionResult: 'pending' });
+                              showToast('Prediction marked as PENDING');
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${!match.predictionResult || match.predictionResult === 'pending' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white'}`}>Pending</button>
+                        </div>
+                        <button 
+                          onClick={() => deleteCricketMatch(match.id)}
+                          className="w-8 h-8 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-lg flex items-center justify-center transition-all ml-2"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-white/5">
+                      <div>
+                        <div className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-1">Win Prob</div>
+                        <div className="text-sm text-emerald-400 font-bold">{match.predictions?.winProbability[match.teams[0].name]}% - {match.predictions?.winProbability[match.teams[1].name]}%</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-1">Toss</div>
+                        <div className="text-sm text-white font-bold">{match.predictions?.tossPrediction}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-1">Top Batsman</div>
+                        <div className="text-sm text-white font-bold">{match.predictions?.topBatsman}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-1">Top Bowler</div>
+                        <div className="text-sm text-white font-bold">{match.predictions?.topBowler}</div>
+                      </div>
+                    </div>
                   </div>
                 ))
               )}
@@ -2130,7 +3218,9 @@ const AdminPanel: React.FC<{
             </div>
 
             <div className="grid gap-4">
-              {filteredUsers.length === 0 ? (
+              {tabLoading ? (
+                <div className="flex justify-center py-12"><Clock className="animate-spin text-white/20" size={32} /></div>
+              ) : filteredUsers.length === 0 ? (
                 <div className="text-center py-12 bg-white/5 rounded-2xl border border-dashed border-white/10">
                   <p className="text-white/30">No users found matching your search.</p>
                 </div>
@@ -2179,33 +3269,65 @@ const AdminPanel: React.FC<{
                         {u.isBlocked ? 'Unblock' : 'Block'} User
                       </button>
                       <button 
-                        onClick={() => {
-                          setSearchQuery(u.email);
-                          setActiveTab('keys');
-                        }}
-                        className="flex-1 md:flex-none bg-emerald-600/10 hover:bg-emerald-600 text-emerald-500 hover:text-white px-6 py-3 rounded-xl text-sm font-bold transition-all border border-emerald-500/20 flex items-center justify-center gap-2"
-                      >
-                        <Key size={18} /> View Keys
-                      </button>
-                      <button 
-                        onClick={() => checkUserBalance(u.id, u.email)}
-                        className="flex-1 md:flex-none bg-indigo-500/10 hover:bg-indigo-600 text-indigo-500 hover:text-white px-6 py-3 rounded-xl text-sm font-bold transition-all border border-indigo-500/20 flex items-center justify-center gap-2"
-                      >
-                        {isCheckingBalance && selectedUserBalance?.userId === u.id ? <RefreshCw size={18} className="animate-spin" /> : <TrendingUp size={18} />}
-                        Check Master Plan
-                      </button>
-                      <button 
-                        onClick={() => {
-                          const newBalance = prompt('Enter new wallet balance for ' + u.email, u.walletBalance?.toString() || '0');
-                          if (newBalance !== null && !isNaN(Number(newBalance))) {
-                            updateDoc(doc(db, 'users', u.id), { walletBalance: Number(newBalance) })
-                              .then(() => showToast('Wallet balance updated!'))
-                              .catch(err => showToast('Error updating balance: ' + err.message));
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          console.log('Edit Wallet clicked for user:', u.id);
+                          const newBalanceStr = prompt('Enter new wallet balance for ' + u.email + ' (0 - 100,000,000)', u.walletBalance?.toString() || '0');
+                          if (newBalanceStr !== null) {
+                            const newBalance = Number(newBalanceStr);
+                            if (!isNaN(newBalance) && newBalance >= 0 && newBalance <= 100000000) {
+                              updateDoc(doc(db, 'users', u.id), { walletBalance: newBalance })
+                                .then(() => {
+                                  showToast('Wallet balance updated!');
+                                  logAdminAction('EDIT_WALLET', `Updated balance for ${u.email} to ${newBalance}`);
+                                })
+                                .catch(err => showToast('Error updating balance: ' + err.message));
+                            } else {
+                              showToast('Invalid balance. Please enter a value between 0 and 100,000,000.');
+                            }
                           }
                         }}
                         className="flex-1 md:flex-none bg-teal-500/10 hover:bg-teal-600 text-teal-500 hover:text-white px-6 py-3 rounded-xl text-sm font-bold transition-all border border-teal-500/20 flex items-center justify-center gap-2"
                       >
                         <Wallet size={18} /> Edit Wallet
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          console.log('Edit Profile clicked for user:', u.id);
+                          const newName = prompt('Enter new username for ' + u.email, u.name || '');
+                          const newUid = prompt('Enter new UID for ' + u.email, u.uid || '');
+                          if (newName !== null || newUid !== null) {
+                            const updateData: any = {};
+                            if (newName !== null) updateData.name = newName;
+                            if (newUid !== null) updateData.uid = newUid;
+                            updateDoc(doc(db, 'users', u.id), updateData)
+                              .then(() => {
+                                showToast('User profile updated!');
+                                logAdminAction('EDIT_PROFILE', `Updated profile for ${u.email}`);
+                              })
+                              .catch(err => showToast('Error updating profile: ' + err.message));
+                          }
+                        }}
+                        className="flex-1 md:flex-none bg-blue-500/10 hover:bg-blue-600 text-blue-500 hover:text-white px-6 py-3 rounded-xl text-sm font-bold transition-all border border-blue-500/20 flex items-center justify-center gap-2"
+                      >
+                        <User size={18} /> Edit Profile
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const isFrozen = !!u.walletFrozen;
+                          updateDoc(doc(db, 'users', u.id), { walletFrozen: !isFrozen })
+                            .then(() => {
+                              showToast(`Wallet ${!isFrozen ? 'frozen' : 'unfrozen'} successfully!`);
+                              logAdminAction('TOGGLE_WALLET_FREEZE', `${!isFrozen ? 'Froze' : 'Unfroze'} wallet for ${u.email}`);
+                            })
+                            .catch(err => showToast('Error updating wallet status: ' + err.message));
+                        }}
+                        className={`flex-1 md:flex-none ${u.walletFrozen ? 'bg-emerald-500/10 text-emerald-500' : 'bg-cyan-500/10 text-cyan-500'} hover:text-white px-6 py-3 rounded-xl text-sm font-bold transition-all border ${u.walletFrozen ? 'border-emerald-500/20' : 'border-cyan-500/20'} flex items-center justify-center gap-2`}
+                      >
+                        <Wallet size={18} /> {u.walletFrozen ? 'Unfreeze Wallet' : 'Freeze Wallet'}
                       </button>
                     </div>
                   </div>
@@ -2366,7 +3488,9 @@ const AdminPanel: React.FC<{
             </form>
 
             <div className="grid gap-4">
-              {coupons.length === 0 ? (
+              {tabLoading ? (
+                <div className="flex justify-center py-12"><Clock className="animate-spin text-white/20" size={32} /></div>
+              ) : coupons.length === 0 ? (
                 <div className="text-center py-12 bg-white/5 rounded-2xl border border-dashed border-white/10">
                   <p className="text-white/30">No coupons created yet.</p>
                 </div>
@@ -2602,7 +3726,9 @@ const AdminPanel: React.FC<{
             </div>
 
             <div className="grid gap-4">
-              {feedbacks.length === 0 ? (
+              {tabLoading ? (
+                <div className="flex justify-center py-12"><Clock className="animate-spin text-white/20" size={32} /></div>
+              ) : feedbacks.length === 0 ? (
                 <div className="text-center py-12 bg-white/5 rounded-2xl border border-dashed border-white/10">
                   <p className="text-white/30">No feedbacks received yet.</p>
                 </div>
@@ -2751,8 +3877,894 @@ const AdminPanel: React.FC<{
             </div>
           </motion.section>
         )}
+
+        {activeTab === 'wallet_edit' && (
+          <motion.section
+            key="wallet_edit"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-6"
+          >
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Wallet className="text-teal-500" /> Wallet Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Select a user to edit their wallet balance or payment details.</p>
+              <div className="grid gap-2">
+                {allUsers.map(user => (
+                  <div key={user.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-white/5">
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white">{user.email}</p>
+                      <p className="text-xs text-slate-500 dark:text-white/40">Balance: ₹{user.balance?.toLocaleString() || 0}</p>
+                    </div>
+                    <button 
+                      onClick={() => setSelectedUserForEdit(user)}
+                      className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold transition-colors"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.section>
+        )}
+        
+        {activeTab === 'vip_edit' && (
+          <motion.section key="vip_edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Star className="text-purple-500" /> VIP System Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit VIP level requirements.</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {Object.entries(vipRequirements).map(([level, req]: [string, any]) => (
+                  <div key={level} className="bg-slate-50 dark:bg-white/5 p-4 rounded-xl border border-slate-200 dark:border-white/10">
+                    <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">{level}</label>
+                    <input
+                      type="number"
+                      value={req.requirement || ''}
+                      onChange={(e) => setVipRequirements(prev => ({ ...prev, [level]: { ...prev[level], requirement: Number(e.target.value) } }))}
+                      className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await setDoc(doc(db, 'settings', 'vip'), vipRequirements);
+                    adminShowToast('VIP requirements updated!');
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.WRITE, 'settings/vip');
+                  }
+                }}
+                className="mt-6 w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition-all"
+              >
+                Save VIP Requirements
+              </button>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'giveaway_edit' && (
+          <motion.section key="giveaway_edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Trophy className="text-pink-500" /> Giveaway Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit monthly giveaway rules.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">Prize</label>
+                  <input
+                    type="text"
+                    value={giveawaySettings.prize || ''}
+                    onChange={(e) => setGiveawaySettings(prev => ({ ...prev, prize: e.target.value }))}
+                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-pink-500"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await setDoc(doc(db, 'settings', 'giveaway'), giveawaySettings);
+                    adminShowToast('Giveaway settings updated!');
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.WRITE, 'settings/giveaway');
+                  }
+                }}
+                className="mt-6 w-full bg-pink-600 hover:bg-pink-500 text-white font-bold py-3 rounded-xl transition-all"
+              >
+                Save Giveaway Settings
+              </button>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'spin_edit' && (
+          <motion.section key="spin_edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Zap className="text-yellow-500" /> Spin & Win Edit
+              </h3>
+              <button 
+                onClick={() => setActiveTab('accounts')}
+                className="bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-white/60 px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10 transition-all text-sm font-bold flex items-center gap-2"
+              >
+                <ChevronLeft size={16} /> Back
+              </button>
+            </div>
+
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-3xl overflow-hidden shadow-sm">
+              <div className="p-6 border-b border-slate-200 dark:border-white/10">
+                <div className="flex items-center justify-between mb-6">
+                  <p className="text-sm text-slate-500 dark:text-white/60">Edit spin prizes.</p>
+                  <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
+                    <button 
+                      onClick={() => setEditingSpinMode('free')}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${editingSpinMode === 'free' ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-white/40'}`}
+                    >
+                      Free Spin
+                    </button>
+                    <button 
+                      onClick={() => setEditingSpinMode('paid')}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${editingSpinMode === 'paid' ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-white/40'}`}
+                    >
+                      Paid Spin
+                    </button>
+                  </div>
+                </div>
+                <div className="bg-slate-900 dark:bg-black rounded-2xl p-6 text-center mb-8">
+                  <h2 className="text-xl md:text-2xl font-black text-white tracking-widest uppercase">
+                    {editingSpinMode === 'free' ? 'FREE SPIN' : 'PAID SPIN'}
+                  </h2>
+                </div>
+
+                <div className="grid grid-cols-[40px_1fr_80px_40px] gap-4 mb-4 px-6 text-slate-400 font-bold text-[10px] uppercase tracking-widest">
+                  <div>No.</div>
+                  <div>Result</div>
+                  <div className="text-right">Chance %</div>
+                  <div></div>
+                </div>
+
+                <div className="space-y-2">
+                  {(editingSpinMode === 'free' ? (spinPrizes.length > 0 ? spinPrizes : [
+                    { label: 'Try Again', chance: 45, color: 'bg-slate-500', type: 'none' },
+                    { label: '₹2', chance: 50, color: 'bg-blue-500', type: 'wallet', amount: 2 },
+                    { label: '1 Week Pro', chance: 4.9, color: 'bg-indigo-500', type: 'plan', duration: '1w' },
+                    { label: '₹2000', chance: 0.09, color: 'bg-purple-500', type: 'wallet', amount: 2000 },
+                    { label: '₹5000', chance: 0.01, color: 'bg-emerald-500', type: 'wallet', amount: 5000 },
+                  ]) : (paidSpinPrizes.length > 0 ? paidSpinPrizes : [
+                    { label: 'Try Again', chance: 50, color: 'bg-slate-500', type: 'none' },
+                    { label: '₹10', chance: 40, color: 'bg-red-500', type: 'wallet', amount: 10 },
+                    { label: '₹100', chance: 8, color: 'bg-blue-500', type: 'wallet', amount: 100 },
+                    { label: '₹500', chance: 1.9, color: 'bg-emerald-500', type: 'wallet', amount: 500 },
+                    { label: 'iPhone 17', chance: 0.08, color: 'bg-purple-600', type: 'physical', item: 'iPhone 17 Pro Max' },
+                    { label: 'Ola S1 Pro', chance: 0.02, color: 'bg-pink-600', type: 'physical', item: 'Ola S1 Pro' },
+                  ])).map((prize, index) => (
+                    <div key={index} className="grid grid-cols-[40px_1fr_80px_40px] gap-4 items-center p-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl transition-all group hover:border-yellow-500/30">
+                      <div className="text-sm font-black text-slate-400 dark:text-white/20">{index + 1}.</div>
+                      <div className="text-sm font-bold text-slate-900 dark:text-white">{prize.label}</div>
+                      <div className="text-sm font-black text-slate-900 dark:text-white text-right">{prize.chance}%</div>
+                      <button 
+                        onClick={() => setEditingSpinPrize({ index, name: prize.label, chance: prize.chance })}
+                        className="p-2 text-slate-400 hover:text-yellow-500 transition-colors flex justify-center"
+                      >
+                        <Pencil size={18} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={async () => {
+                    try {
+                      await setDoc(doc(db, 'settings', 'spin'), { 
+                        freePrizes: spinPrizes,
+                        paidPrizes: paidSpinPrizes
+                      });
+                      adminShowToast('Spin prizes updated!');
+                    } catch (err) {
+                      handleFirestoreError(err, OperationType.WRITE, 'settings/spin');
+                    }
+                  }}
+                  className="mt-8 w-full bg-slate-900 dark:bg-white text-white dark:text-black font-black py-4 rounded-2xl transition-all text-sm uppercase tracking-widest hover:opacity-90 shadow-xl"
+                >
+                  Save All Changes
+                </button>
+              </div>
+            </div>
+
+            {/* Edit Modal */}
+            <AnimatePresence>
+              {editingSpinPrize && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-3xl p-8 w-full max-w-md shadow-2xl"
+                  >
+                    <h4 className="text-2xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                      <Pencil className="text-yellow-500" /> Edit Prize {editingSpinPrize.index + 1}
+                    </h4>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-bold text-slate-500 dark:text-white/60 mb-2">Prize Name</label>
+                        <input
+                          type="text"
+                          value={editingSpinPrize.name}
+                          onChange={(e) => setEditingSpinPrize({ ...editingSpinPrize, name: e.target.value })}
+                          className="w-full bg-slate-100 dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-slate-500 dark:text-white/60 mb-2">Possibility (%)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={editingSpinPrize.chance}
+                          onChange={(e) => setEditingSpinPrize({ ...editingSpinPrize, chance: Number(e.target.value) })}
+                          className="w-full bg-slate-100 dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white font-bold"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-3 mt-8">
+                      <button
+                        onClick={() => setEditingSpinPrize(null)}
+                        className="flex-1 py-3 rounded-xl font-bold text-slate-500 dark:text-white/60 hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => {
+                          const currentPrizes = editingSpinMode === 'free' ? (spinPrizes.length > 0 ? spinPrizes : [
+                            { label: 'Try Again', chance: 45, color: 'bg-slate-500', type: 'none' },
+                            { label: '₹2', chance: 50, color: 'bg-blue-500', type: 'wallet', amount: 2 },
+                            { label: '1 Week Pro', chance: 4.9, color: 'bg-indigo-500', type: 'plan', duration: '1w' },
+                            { label: '₹2000', chance: 0.09, color: 'bg-purple-500', type: 'wallet', amount: 2000 },
+                            { label: '₹5000', chance: 0.01, color: 'bg-emerald-500', type: 'wallet', amount: 5000 },
+                          ]) : (paidSpinPrizes.length > 0 ? paidSpinPrizes : [
+                            { label: 'Try Again', chance: 50, color: 'bg-slate-500', type: 'none' },
+                            { label: '₹10', chance: 40, color: 'bg-red-500', type: 'wallet', amount: 10 },
+                            { label: '₹100', chance: 8, color: 'bg-blue-500', type: 'wallet', amount: 100 },
+                            { label: '₹500', chance: 1.9, color: 'bg-emerald-500', type: 'wallet', amount: 500 },
+                            { label: 'iPhone 17', chance: 0.08, color: 'bg-purple-600', type: 'physical', item: 'iPhone 17 Pro Max' },
+                            { label: 'Ola S1 Pro', chance: 0.02, color: 'bg-pink-600', type: 'physical', item: 'Ola S1 Pro' },
+                          ]);
+                          
+                          const newPrizes = [...currentPrizes];
+                          newPrizes[editingSpinPrize.index] = { 
+                            ...newPrizes[editingSpinPrize.index],
+                            label: editingSpinPrize.name, 
+                            chance: editingSpinPrize.chance 
+                          };
+                          
+                          if (editingSpinMode === 'free') {
+                            setSpinPrizes(newPrizes);
+                          } else {
+                            setPaidSpinPrizes(newPrizes);
+                          }
+                          setEditingSpinPrize(null);
+                        }}
+                        className="flex-1 py-3 rounded-xl font-bold bg-yellow-600 hover:bg-yellow-500 text-white transition-colors"
+                      >
+                        Apply
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+          </motion.section>
+        )}
+
+        {activeTab === 'reward_edit' && (
+          <motion.section key="reward_edit" className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Gift className="text-pink-500" /> Reward Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Add rewards to users.</p>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'staking_edit' && (
+          <motion.section key="staking_edit" className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <ShieldCheck className="text-teal-500" /> Staking Vault Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit staking percentages.</p>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'staking_edit' && (
+          <motion.section key="staking_edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <ShieldCheck className="text-teal-500" /> Staking Vault Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit staking percentages.</p>
+              <div className="space-y-4">
+                {Object.entries(stakingVaultSettings).map(([duration, rate]: [string, any]) => (
+                  <div key={duration} className="flex gap-2 items-center">
+                    <span className="text-sm font-bold text-slate-900 dark:text-white w-24">{duration}</span>
+                    <input
+                      type="number"
+                      value={rate || ''}
+                      onChange={(e) => setStakingVaultSettings(prev => ({ ...prev, [duration]: Number(e.target.value) }))}
+                      className="flex-1 bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white"
+                      placeholder="Rate"
+                    />
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await setDoc(doc(db, 'settings', 'staking'), stakingVaultSettings);
+                    adminShowToast('Staking settings updated!');
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.WRITE, 'settings/staking');
+                  }
+                }}
+                className="mt-6 w-full bg-teal-600 hover:bg-teal-500 text-white font-bold py-3 rounded-xl transition-all"
+              >
+                Save Staking Settings
+              </button>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'purchase_edit' && (
+          <motion.section key="purchase_edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <ShoppingBag className="text-orange-500" /> Purchase Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit purchase settings.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">Bonus Rate (%)</label>
+                  <input
+                    type="number"
+                    value={purchaseSettings.bonusRate || ''}
+                    onChange={(e) => setPurchaseSettings(prev => ({ ...prev, bonusRate: Number(e.target.value) }))}
+                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-orange-500"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await setDoc(doc(db, 'settings', 'purchase'), purchaseSettings);
+                    adminShowToast('Purchase settings updated!');
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.WRITE, 'settings/purchase');
+                  }
+                }}
+                className="mt-6 w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition-all"
+              >
+                Save Purchase Settings
+              </button>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'leaderboard_edit' && (
+          <motion.section key="leaderboard_edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Trophy className="text-amber-500" /> Leaderboard Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit leaderboard settings.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">Top N Users</label>
+                  <input
+                    type="number"
+                    value={leaderboardSettings.topN || ''}
+                    onChange={(e) => setLeaderboardSettings(prev => ({ ...prev, topN: Number(e.target.value) }))}
+                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await setDoc(doc(db, 'settings', 'leaderboard'), leaderboardSettings);
+                    adminShowToast('Leaderboard settings updated!');
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.WRITE, 'settings/leaderboard');
+                  }
+                }}
+                className="mt-6 w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-xl transition-all"
+              >
+                Save Leaderboard Settings
+              </button>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'reward_edit' && (
+          <motion.section key="reward_edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Gift className="text-emerald-500" /> Reward Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit reward settings.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">Reward Name</label>
+                  <input
+                    type="text"
+                    value={rewardSettings.name || ''}
+                    onChange={(e) => setRewardSettings(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await setDoc(doc(db, 'settings', 'reward'), rewardSettings);
+                    adminShowToast('Reward settings updated!');
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.WRITE, 'settings/reward');
+                  }
+                }}
+                className="mt-6 w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-xl transition-all"
+              >
+                Save Reward Settings
+              </button>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'app_settings_edit' && (
+          <motion.section key="app_settings_edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Settings className="text-slate-500" /> App Settings Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit app name and logo URL.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">App Name</label>
+                  <input
+                    type="text"
+                    value={appSettings.name || ''}
+                    onChange={(e) => setAppSettings(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">Logo URL</label>
+                  <input
+                    type="text"
+                    value={appSettings.logoUrl || ''}
+                    onChange={(e) => setAppSettings(prev => ({ ...prev, logoUrl: e.target.value }))}
+                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-slate-500"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await setDoc(doc(db, 'settings', 'app'), appSettings);
+                    adminShowToast('App settings updated!');
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.WRITE, 'settings/app');
+                  }
+                }}
+                className="mt-6 w-full bg-slate-600 hover:bg-slate-500 text-white font-bold py-3 rounded-xl transition-all"
+              >
+                Save App Settings
+              </button>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'global_config' && (
+          <motion.section key="global_config" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Settings className="text-slate-500" /> Global Configuration
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Manage app theme, maintenance mode, and feature toggles.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">App Theme</label>
+                  <select
+                    value={appSettings.theme || 'system'}
+                    onChange={(e) => setAppSettings(prev => ({ ...prev, theme: e.target.value }))}
+                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-slate-500"
+                  >
+                    <option value="system">System Default</option>
+                    <option value="light">Light Mode</option>
+                    <option value="dark">Dark Mode</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">Version Notes / Announcements</label>
+                  <textarea
+                    value={appSettings.versionNotes || ''}
+                    onChange={(e) => setAppSettings(prev => ({ ...prev, versionNotes: e.target.value }))}
+                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-slate-500"
+                    rows={3}
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="maintenanceMode"
+                    checked={appSettings.maintenanceMode || false}
+                    onChange={(e) => setAppSettings(prev => ({ ...prev, maintenanceMode: e.target.checked }))}
+                    className="w-5 h-5 rounded border-slate-300 dark:border-white/20 text-slate-600 focus:ring-slate-500"
+                  />
+                  <label htmlFor="maintenanceMode" className="text-sm font-bold text-slate-900 dark:text-white">Enable Maintenance Mode</label>
+                </div>
+                <div className="pt-4 border-t border-slate-200 dark:border-white/10">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Feature Toggles</h4>
+                  <div className="space-y-2">
+                    {['referrals', 'vip', 'spinAndWin', 'giveaway', 'leaderboard'].map(feature => (
+                      <div key={feature} className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          id={`toggle-${feature}`}
+                          checked={appSettings.features?.[feature] ?? true}
+                          onChange={(e) => setAppSettings(prev => ({ 
+                            ...prev, 
+                            features: { ...(prev.features || {}), [feature]: e.target.checked } 
+                          }))}
+                          className="w-4 h-4 rounded border-slate-300 dark:border-white/20 text-slate-600 focus:ring-slate-500"
+                        />
+                        <label htmlFor={`toggle-${feature}`} className="text-sm text-slate-700 dark:text-white/80 capitalize">{feature.replace(/([A-Z])/g, ' $1').trim()}</label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await setDoc(doc(db, 'settings', 'app'), appSettings, { merge: true });
+                    adminShowToast('Global configuration updated!');
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.WRITE, 'settings/app');
+                  }
+                }}
+                className="mt-6 w-full bg-slate-600 hover:bg-slate-500 text-white font-bold py-3 rounded-xl transition-all"
+              >
+                Save Global Configuration
+              </button>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'security_logs' && (
+          <motion.section key="security_logs" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <ShieldAlert className="text-red-500" /> Security & Logs
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">View audit logs and login history.</p>
+              {tabLoading ? (
+                <div className="flex justify-center py-12"><Clock className="animate-spin text-slate-400 dark:text-white/20" size={32} /></div>
+              ) : auditLogs.length === 0 ? (
+                <div className="text-center py-12 bg-slate-50 dark:bg-white/5 rounded-xl border border-dashed border-slate-200 dark:border-white/10">
+                  <ShieldAlert className="w-12 h-12 text-slate-300 dark:text-white/20 mx-auto mb-3" />
+                  <p className="text-slate-500 dark:text-white/40 font-medium">Audit logging is active. Logs will appear here.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {auditLogs.map((log) => (
+                    <div key={log.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10">
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-bold text-slate-900 dark:text-white">{log.action}</span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-white/60">
+                            {log.adminEmail}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500 dark:text-white/40">{log.details}</p>
+                      </div>
+                      <div className="text-xs text-slate-400 dark:text-white/40">
+                        {log.timestamp?.toDate ? format(log.timestamp.toDate(), 'MMM d, yyyy HH:mm') : 'Just now'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'system_override' && (
+          <motion.section key="system_override" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <AlertTriangle className="text-rose-500" /> System Override
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-rose-500/30 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-rose-500 mb-6 font-bold flex items-center gap-2">
+                <AlertTriangle size={16} /> DANGER ZONE: These actions are irreversible.
+              </p>
+              <div className="space-y-4">
+                <button 
+                  onClick={() => {
+                    if (window.confirm('Are you absolutely sure you want to clear ALL user balances? This cannot be undone.')) {
+                      adminShowToast('System override: Balances cleared (Simulated)');
+                      logAdminAction('SYSTEM_OVERRIDE', 'Simulated clearing all user balances');
+                    }
+                  }}
+                  className="w-full bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white border border-rose-500/20 font-bold py-3 rounded-xl transition-all"
+                >
+                  Clear All User Balances
+                </button>
+                <button 
+                  onClick={() => {
+                    if (window.confirm('Are you absolutely sure you want to wipe ALL transaction history?')) {
+                      adminShowToast('System override: History wiped (Simulated)');
+                      logAdminAction('SYSTEM_OVERRIDE', 'Simulated wiping all transaction history');
+                    }
+                  }}
+                  className="w-full bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white border border-rose-500/20 font-bold py-3 rounded-xl transition-all"
+                >
+                  Wipe Transaction History
+                </button>
+                <button 
+                  onClick={() => {
+                    if (window.confirm('Are you absolutely sure you want to force logout ALL users globally?')) {
+                      adminShowToast('System override: Global logout initiated (Simulated)');
+                      logAdminAction('SYSTEM_OVERRIDE', 'Simulated global force logout');
+                    }
+                  }}
+                  className="w-full bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white border border-rose-500/20 font-bold py-3 rounded-xl transition-all"
+                >
+                  Force Logout All Users
+                </button>
+              </div>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'purchase_edit' && (
+          <motion.section key="purchase_edit_2" className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <CreditCard className="text-blue-500" /> Purchase Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit plan prices & discounts.</p>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'referral_edit' && (
+          <motion.section key="referral_edit" className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Share2 className="text-green-500" /> Refer & Earn Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit referral rewards.</p>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'leaderboard_edit' && (
+          <motion.section key="leaderboard_edit" className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Trophy className="text-yellow-500" /> Leaderboard Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit leaderboard rules.</p>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'achievement_edit' && (
+          <motion.section key="achievement_edit" className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Award className="text-purple-500" /> Achievement Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit achievements.</p>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'talk_edit' && (
+          <motion.section key="talk_edit" className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <MessageSquare className="text-cyan-500" /> Talks Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit welcome message.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">Welcome Message</label>
+                  <textarea
+                    value={talkSettings.welcomeMessage || ''}
+                    onChange={(e) => setTalkSettings(prev => ({ ...prev, welcomeMessage: e.target.value }))}
+                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-cyan-500"
+                    rows={4}
+                  />
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await setDoc(doc(db, 'settings', 'talk'), talkSettings, { merge: true });
+                    adminShowToast('Talks settings updated!');
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.WRITE, 'settings/talk');
+                  }
+                }}
+                className="mt-6 w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-3 rounded-xl transition-all"
+              >
+                Save Talks Settings
+              </button>
+            </div>
+          </motion.section>
+        )}
+
+        {activeTab === 'ai_support_edit' && (
+          <motion.section key="ai_support_edit" className="space-y-6">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <MessageSquare className="text-orange-500" /> AI Support Edit
+            </h3>
+            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit system prompt.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">System Prompt</label>
+                  <textarea
+                    value={aiSupportSettings.systemPrompt || ''}
+                    onChange={(e) => setAiSupportSettings(prev => ({ ...prev, systemPrompt: e.target.value }))}
+                    className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-orange-500"
+                    rows={6}
+                  />
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await setDoc(doc(db, 'settings', 'ai_support'), aiSupportSettings, { merge: true });
+                    adminShowToast('AI Support settings updated!');
+                  } catch (err) {
+                    handleFirestoreError(err, OperationType.WRITE, 'settings/ai_support');
+                  }
+                }}
+                className="mt-6 w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition-all"
+              >
+                Save AI Support Settings
+              </button>
+            </div>
+          </motion.section>
+        )}
+        
+        {activeTab === 'rewards' && (
+          <motion.section
+            key="rewards"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-6"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Gift className="text-pink-500" /> Physical Rewards Management
+              </h3>
+            </div>
+            
+            <div className="grid gap-4">
+              {physicalRewards.length === 0 ? (
+                <div className="text-center py-12 text-slate-500 dark:text-white/40">No physical rewards found.</div>
+              ) : (
+                physicalRewards.map((reward) => (
+                  <div key={reward.id} className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 flex flex-col md:flex-row gap-6 items-start md:items-center justify-between shadow-sm">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <h4 className="font-bold text-slate-900 dark:text-white">{reward.item}</h4>
+                        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${
+                          reward.status === 'pending_claim' ? 'bg-amber-500/10 text-amber-500' :
+                          reward.status === 'pending_delivery' ? 'bg-blue-500/10 text-blue-500' :
+                          'bg-emerald-500/10 text-emerald-500'
+                        }`}>
+                          {reward.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 dark:text-white/60">User ID: <span className="font-mono">{reward.userId}</span></p>
+                      <p className="text-xs text-slate-500 dark:text-white/60">Date: {reward.createdAt?.toDate ? reward.createdAt.toDate().toLocaleString() : 'N/A'}</p>
+                      {reward.address && (
+                        <div className="mt-3 bg-slate-50 dark:bg-white/5 p-3 rounded-xl border border-slate-200 dark:border-white/10 text-sm">
+                          <p className="text-xs font-bold text-slate-500 dark:text-white/40 mb-1 uppercase tracking-widest">Delivery Address</p>
+                          <p className="text-slate-900 dark:text-white">{reward.address}</p>
+                        </div>
+                      )}
+                    </div>
+                    {reward.status === 'pending_delivery' && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            await updateDoc(doc(db, 'physical_rewards', reward.id), { status: 'delivered' });
+                            showToast('Reward marked as delivered');
+                          } catch (err) {
+                            handleFirestoreError(err, OperationType.UPDATE, `physical_rewards/${reward.id}`);
+                          }
+                        }}
+                        className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-4 py-2 rounded-xl text-sm transition-colors flex items-center gap-2"
+                      >
+                        <CheckCircle2 size={16} /> Mark Delivered
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.section>
+        )}
       </AnimatePresence>
     </>
+  )}
+
+  {/* User Edit Modal */}
+  {selectedUserForEdit && (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+      <motion.div 
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="bg-[#151619] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl relative"
+      >
+        <button 
+          onClick={() => setSelectedUserForEdit(null)}
+          className="absolute top-4 right-4 text-white/40 hover:text-white transition-colors"
+        >
+          <X size={24} />
+        </button>
+        <h3 className="text-xl font-bold text-white mb-6">Edit {selectedUserForEdit.email}</h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Balance</label>
+            <input 
+              type="number"
+              defaultValue={selectedUserForEdit.balance}
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500/50"
+              onBlur={async (e) => {
+                const newBalance = Number(e.target.value);
+                try {
+                  await updateDoc(doc(db, 'users', selectedUserForEdit.id), { balance: newBalance });
+                  showToast('Balance updated!');
+                } catch (err) {
+                  handleFirestoreError(err, OperationType.UPDATE, `users/${selectedUserForEdit.id}`);
+                }
+              }}
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">UPI ID</label>
+            <input 
+              type="text"
+              defaultValue={selectedUserForEdit.upiId}
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-emerald-500/50"
+              onBlur={async (e) => {
+                const newUpiId = e.target.value;
+                try {
+                  await updateDoc(doc(db, 'users', selectedUserForEdit.id), { upiId: newUpiId });
+                  showToast('UPI ID updated!');
+                } catch (err) {
+                  handleFirestoreError(err, OperationType.UPDATE, `users/${selectedUserForEdit.id}`);
+                }
+              }}
+            />
+          </div>
+        </div>
+      </motion.div>
+    </div>
   )}
 
   {/* User Balance Modal */}
@@ -4324,7 +6336,8 @@ const ProfileView: React.FC<{
   onPurchase: () => void;
   soundEnabled: boolean;
   toggleSound: () => void;
-}> = ({ onBack, onShowResetModal, pendingResetDay, onGiveFeedback, onPurchase, soundEnabled, toggleSound }) => {
+  showToast: (msg: string) => void;
+}> = ({ onBack, onShowResetModal, pendingResetDay, onGiveFeedback, onPurchase, soundEnabled, toggleSound, showToast }) => {
   const { profile } = useAuth();
   const { activePlan, loading: planLoading } = usePlan();
   const { theme, toggleTheme } = useTheme();
@@ -4442,11 +6455,11 @@ const ProfileView: React.FC<{
                 if ('Notification' in window) {
                   window.Notification.requestPermission().then(permission => {
                     if (permission === 'granted') {
-                      alert('Push notifications enabled!');
+                      showToast('Push notifications enabled!');
                     }
                   });
                 } else {
-                  alert('Push notifications are not supported in this browser.');
+                  showToast('Push notifications are not supported in this browser.');
                 }
               }}
               className="w-full bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-900 dark:text-white text-sm font-bold py-4 rounded-2xl transition-all border border-slate-200 dark:border-white/10 flex items-center justify-between px-6"
@@ -5498,8 +7511,50 @@ const WingoStrategyView: React.FC<{
   );
 };
 
+// --- Color Game Selection View ---
+const ColorGameSelectionView: React.FC<{ onSelect: (wingo: '30s' | '1min' | '3min' | '5min') => void; onBack: () => void }> = ({ onSelect, onBack }) => {
+  const wingoItems = [
+    { id: '30s', label: 'Wingo 30s', icon: Clock, color: 'text-blue-500', description: 'Fast-paced 30s rounds' },
+    { id: '1min', label: 'Wingo 1 Min', icon: TrendingUp, color: 'text-emerald-500', description: 'Standard 1 minute rounds' },
+    { id: '3min', label: 'Wingo 3 Min', icon: Zap, color: 'text-orange-500', description: 'Strategic 3 minute rounds' },
+    { id: '5min', label: 'Wingo 5 Min', icon: Activity, color: 'text-red-500', description: 'Long-term 5 minute rounds' },
+  ];
+
+  return (
+    <div className="space-y-6 pb-20">
+      <div className="flex items-center gap-4 px-4 pt-4">
+        <button onClick={onBack} className="p-2 bg-white/5 rounded-xl text-white/60 hover:text-white transition-colors">
+          <ChevronLeft size={24} />
+        </button>
+        <h1 className="text-2xl font-black text-white tracking-tighter uppercase">Select Wingo Game</h1>
+      </div>
+
+      <div className="px-4 grid gap-4">
+        {wingoItems.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => onSelect(item.id as any)}
+            className="bg-[#151619] border border-white/10 rounded-3xl p-6 flex items-center justify-between group hover:border-emerald-500/50 transition-all"
+          >
+            <div className="flex items-center gap-4">
+              <div className={`p-4 rounded-2xl bg-white/5 ${item.color} group-hover:scale-110 transition-transform`}>
+                <item.icon size={32} />
+              </div>
+              <div className="text-left">
+                <h3 className="text-lg font-black text-white uppercase tracking-tight">{item.label}</h3>
+                <p className="text-xs text-white/40 font-bold uppercase tracking-widest">{item.description}</p>
+              </div>
+            </div>
+            <ChevronRight size={24} className="text-white/20 group-hover:text-emerald-500 transition-colors" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // --- Main Dashboard ---
-type ViewState = 'home' | 'purchase' | 'admin' | 'history' | 'profile' | 'inbox' | 'feedback' | 'wingo_selection' | 'wingo_predictions' | 'master' | 'referral' | 'wallet' | 'leaderboard' | 'achievements' | 'vip' | 'giveaway' | 'spin' | 'staking' | 'analytics_user' | 'support';
+type ViewState = 'home' | 'color_prediction' | 'purchase' | 'admin' | 'history' | 'profile' | 'inbox' | 'feedback' | 'referral' | 'wallet' | 'leaderboard' | 'achievements' | 'vip' | 'giveaway' | 'spin' | 'rewards' | 'staking' | 'analytics_user' | 'support' | 'wingo_selection' | 'wingo_master' | 'wingo_predictions' | 'aviator' | 'cricket' | 'stock' | 'color_game_selection' | 'game_settings';
 
 export const Dashboard: React.FC = () => {
   const { profile, isAdmin } = useAuth();
@@ -5514,15 +7569,25 @@ export const Dashboard: React.FC = () => {
   const [resetTargetDay, setResetTargetDay] = useState<number>(1);
   const [resetStatus, setResetStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [cricketMatches, setCricketMatches] = useState<CricketMatch[]>([]);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem('soundEnabled');
-    return saved !== null ? JSON.parse(saved) : true;
+    try {
+      const saved = localStorage.getItem('soundEnabled');
+      return saved !== null ? JSON.parse(saved) : true;
+    } catch (err) {
+      console.error('LocalStorage error:', err);
+      return true;
+    }
   });
 
   const toggleSound = () => {
     setSoundEnabled((prev: boolean) => {
       const next = !prev;
-      localStorage.setItem('soundEnabled', JSON.stringify(next));
+      try {
+        localStorage.setItem('soundEnabled', JSON.stringify(next));
+      } catch (err) {
+        console.error('LocalStorage error:', err);
+      }
       return next;
     });
   };
@@ -5531,6 +7596,24 @@ export const Dashboard: React.FC = () => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
+
+  useEffect(() => {
+    const qCricket = query(collection(db, 'cricketMatches'), orderBy('time', 'asc'));
+    const unsubCricket = onSnapshot(qCricket, (snapshot) => {
+      const matchesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        time: doc.data().time?.toDate ? doc.data().time.toDate() : new Date(doc.data().time || Date.now())
+      })) as CricketMatch[];
+      setCricketMatches(matchesData);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'cricketMatches');
+    });
+
+    return () => {
+      unsubCricket();
+    };
+  }, []);
 
   useEffect(() => {
     if (!profile) return;
@@ -5605,6 +7688,13 @@ export const Dashboard: React.FC = () => {
 
   const handleSignOut = () => signOut(auth);
 
+  const bottomNavItems = [
+    { id: 'home', label: 'Home', icon: LayoutDashboard },
+    { id: 'color_game_selection', label: 'Color', icon: Palette },
+    { id: 'wallet', label: 'Wallet', icon: Wallet },
+    { id: 'profile', label: 'Profile', icon: User },
+  ];
+
   const wingoItems = [
     { id: 'wingo30s', label: 'Wingo 30s', icon: Clock, color: 'text-blue-500', wingo: '30s' as const },
     { id: 'wingo1min', label: 'Only Wingo 1Min', icon: TrendingUp, color: 'text-emerald-500', wingo: '1min' as const },
@@ -5613,11 +7703,11 @@ export const Dashboard: React.FC = () => {
   ];
 
   const otherItems = [
-    { id: 'master', label: 'Master Plan', icon: Target, color: 'text-indigo-500' },
     { id: 'wallet', label: 'Wallet', icon: Wallet, color: 'text-emerald-500' },
     { id: 'vip', label: 'VIP System', icon: Award, color: 'text-yellow-400' },
     { id: 'giveaway', label: 'Giveaway', icon: Trophy, color: 'text-pink-500' },
     { id: 'spin', label: 'Spin & Win', icon: RefreshCw, color: 'text-purple-500' },
+    { id: 'rewards', label: 'My Rewards', icon: Gift, color: 'text-pink-500' },
     { id: 'staking', label: 'Staking Vaults', icon: ShieldCheck, color: 'text-teal-500' },
     { id: 'analytics_user', label: 'Analytics', icon: TrendingUp, color: 'text-blue-500' },
     { id: 'support', label: 'AI Support', icon: MessageSquare, color: 'text-orange-500' },
@@ -5627,15 +7717,113 @@ export const Dashboard: React.FC = () => {
     { id: 'referral', label: 'Refer & Earn', icon: Users, color: 'text-blue-500' },
     { id: 'leaderboard', label: 'Leaderboard', icon: Trophy, color: 'text-amber-500' },
     { id: 'achievements', label: 'Achievements', icon: Award, color: 'text-indigo-400' },
-    ...(isAdmin ? [{ id: 'admin', label: 'Admin Panel', icon: ShieldCheck, color: 'text-orange-500' }] : [])
+    ...(isAdmin ? [
+      { id: 'admin', label: 'Admin Panel', icon: ShieldCheck, color: 'text-orange-500', adminOnly: true },
+      { id: 'game_settings', label: 'Game Settings', icon: Wrench, color: 'text-rose-500', adminOnly: true }
+    ] : [])
   ];
+
+  const HomeView: React.FC = () => (
+    <div className="space-y-8 pb-20">
+      {/* Hero Section */}
+      <div className="relative overflow-hidden bg-gradient-to-br from-emerald-600 to-teal-700 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-emerald-500/20">
+        <div className="relative z-10">
+          <h1 className="text-4xl font-black mb-2 tracking-tight uppercase">AI PREDICTOR</h1>
+          <p className="text-emerald-100 text-sm font-medium max-w-[200px] leading-relaxed">Advanced artificial intelligence for high-accuracy gaming predictions.</p>
+          <button 
+            onClick={() => navigateTo('color_game_selection')}
+            className="mt-6 bg-white text-emerald-700 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-50 shadow-lg transition-all active:scale-95"
+          >
+            Start Predicting
+          </button>
+        </div>
+        <div className="absolute top-[-20%] right-[-10%] opacity-10 rotate-12">
+          <ShieldCheck size={240} />
+        </div>
+      </div>
+
+      {/* Main Games Grid */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Main Games</h3>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <button 
+            onClick={() => navigateTo('color_game_selection')}
+            className="group relative overflow-hidden bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 text-left transition-all hover:border-emerald-500/50 hover:shadow-xl hover:shadow-emerald-500/5"
+          >
+            <div className="relative z-10 space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
+                <Palette size={24} />
+              </div>
+              <div>
+                <span className="block font-black text-lg text-slate-900 dark:text-white uppercase tracking-tight">Color Prediction</span>
+                <span className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest font-bold">Wingo Games</span>
+              </div>
+            </div>
+          </button>
+
+          <button 
+            onClick={() => navigateTo('cricket')}
+            className="group relative overflow-hidden bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 text-left transition-all hover:border-emerald-500/50 hover:shadow-xl hover:shadow-emerald-500/5"
+          >
+            <div className="relative z-10 space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
+                <Trophy size={24} />
+              </div>
+              <div>
+                <span className="block font-black text-lg text-slate-900 dark:text-white uppercase tracking-tight">Cricket Prediction</span>
+                <span className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest font-bold">AI Match Insights</span>
+              </div>
+            </div>
+          </button>
+
+          <button 
+            onClick={() => navigateTo('stock')}
+            className="group relative overflow-hidden bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 text-left transition-all hover:border-emerald-500/50 hover:shadow-xl hover:shadow-emerald-500/5"
+          >
+            <div className="relative z-10 space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
+                <BarChart2 size={24} />
+              </div>
+              <div>
+                <span className="block font-black text-lg text-slate-900 dark:text-white uppercase tracking-tight">Stock Prediction</span>
+                <span className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest font-bold">Long-Term Insights</span>
+              </div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Other Features */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Features & Tools</h3>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {otherItems.filter(item => !item.adminOnly || isAdmin).map((item) => (
+            <button
+              key={item.id}
+              onClick={() => navigateTo(item.id as any)}
+              className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-4 flex flex-col items-center gap-2 transition-all hover:border-slate-400 dark:hover:border-white/30 active:scale-95"
+            >
+              <div className={`p-2 rounded-xl bg-slate-100 dark:bg-white/5 ${item.color}`}>
+                <item.icon size={18} />
+              </div>
+              <span className="text-[9px] font-bold text-slate-600 dark:text-white/50 uppercase tracking-tight text-center">{item.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0a0a0a] text-slate-900 dark:text-white transition-colors duration-500">
       <header className="border-b border-slate-200 dark:border-white/5 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl sticky top-0 z-50 transition-colors duration-500">
         <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigateTo('home')}>
-            <div className="w-8 h-8 bg-indigo-600 text-white rounded-xl flex items-center justify-center font-black italic text-sm shadow-lg shadow-indigo-500/20">P</div>
+            <div className="w-8 h-8 bg-emerald-500 text-white rounded-xl flex items-center justify-center font-black italic text-sm shadow-lg shadow-emerald-500/20">P</div>
             <span className="font-black tracking-tighter text-xl uppercase text-slate-900 dark:text-white italic">PredictKey</span>
           </div>
 
@@ -5792,102 +7980,78 @@ export const Dashboard: React.FC = () => {
         </AnimatePresence>
 
         <AnimatePresence mode="wait">
-          {view === 'home' && (
-            <motion.div 
-              key="home"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="space-y-4"
-            >
-              {/* Review Section - Directly below header */}
-              <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-3xl overflow-hidden shadow-sm">
-                <div className="p-3 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
-                  <span className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest">Live Feedback</span>
-                  <div className="flex items-center gap-1">
-                    {[1, 2, 3, 4, 5].map(i => <Star key={i} size={8} className="fill-amber-400 text-amber-400" />)}
-                  </div>
-                </div>
-                <FakeFeedbackMarquee />
-              </div>
-
-              {/* Wingo Grid */}
-              <div className="grid grid-cols-2 gap-3">
-                {wingoItems.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => navigateTo('wingo_selection', item.wingo)}
-                    className="p-5 rounded-3xl bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 flex flex-col items-center gap-3 group hover:border-indigo-500/50 transition-all shadow-sm"
-                  >
-                    <div className={`p-3 rounded-2xl bg-slate-50 dark:bg-white/5 ${item.color} group-hover:scale-110 transition-transform`}>
-                      <item.icon size={24} />
-                    </div>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-tight">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Other Items */}
-              <div className="grid grid-cols-2 gap-3">
-                {otherItems.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => navigateTo(item.id as any)}
-                    className="p-4 rounded-3xl bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 flex items-center gap-3 group hover:border-indigo-500/50 transition-all shadow-sm"
-                  >
-                    <div className={`p-2 rounded-xl bg-slate-50 dark:bg-white/5 ${item.color}`}>
-                      <item.icon size={18} />
-                    </div>
-                    <div className="flex flex-col items-start">
-                      <span className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-tight">{item.label}</span>
-                      {item.badge && <span className="text-[8px] font-black text-indigo-500 uppercase">{item.badge} New</span>}
-                    </div>
-                  </button>
-                ))}
-              </div>
-
-              {/* Register Button at Bottom */}
-              <div className="pt-4">
-                <button 
-                  onClick={() => window.open('https://91club-official.com/#/register?invitationCode=74823158936', '_blank')}
-                  className="w-full p-5 rounded-3xl bg-indigo-600 text-white font-black uppercase tracking-widest text-sm shadow-lg shadow-indigo-500/20 hover:bg-indigo-700 transition-all flex items-center justify-center gap-3"
-                >
-                  <Zap size={20} />
-                  Register Now
-                </button>
-              </div>
+          {view === 'color_game_selection' && (
+            <motion.div key="color_game_selection" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <ColorGameSelectionView 
+                onSelect={(wingo) => navigateTo('wingo_selection', wingo)}
+                onBack={() => navigateTo('home')}
+              />
             </motion.div>
           )}
 
-          {view === 'wingo_selection' && (
+          {view === 'home' && (
+            <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <HomeView />
+            </motion.div>
+          )}
+
+          {view === 'color_prediction' && (
+            <motion.div key="color_prediction" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <ColorPredictionView />
+            </motion.div>
+          )}
+
+          {view === 'wingo_selection' && selectedWingo && (
             <motion.div key="wingo_selection" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
               <WingoSelectionView 
-                wingo={selectedWingo === '1min' ? '1Min' : selectedWingo === '30s' ? '30s' : selectedWingo === '3min' ? '3Min' : '5Min'}
-                onBack={() => setView('home')}
-                onSelect={(mode) => navigateTo(mode === 'master' ? 'master' : 'wingo_predictions')}
+                wingo={selectedWingo} 
+                onBack={() => navigateTo('home')} 
+                onSelect={(mode) => navigateTo(mode === 'master' ? 'wingo_master' : 'wingo_predictions')} 
               />
             </motion.div>
           )}
 
-          {view === 'master' && (
-            <motion.div key="master" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+          {view === 'wingo_master' && selectedWingo && (
+            <motion.div key="wingo_master" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
               <WingoStrategyView 
-                onBack={() => navigateTo('home')}
-                hasAccess={!!activePlan}
-                onPurchase={() => navigateTo('purchase')}
+                onBack={() => setView('wingo_selection')} 
+                hasAccess={!!activePlan} 
+                onPurchase={() => navigateTo('purchase')} 
                 profile={profile}
                 onShowResetModal={() => setShowResetModal(true)}
-                initialGameType={selectedWingo || '1min'}
+                initialGameType={selectedWingo}
               />
             </motion.div>
           )}
 
-          {view === 'wingo_predictions' && (
+          {view === 'wingo_predictions' && selectedWingo && (
             <motion.div key="wingo_predictions" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              {selectedWingo === '1min' && <Wingo1MinView onBack={() => setView('wingo_selection')} hasAccess={!!activePlan} onPurchase={() => setView('purchase')} />}
-              {selectedWingo === '30s' && <Wingo30sView onBack={() => setView('wingo_selection')} hasAccess={!!activePlan} onPurchase={() => setView('purchase')} />}
-              {selectedWingo === '3min' && <Wingo3MinView onBack={() => setView('wingo_selection')} hasAccess={!!activePlan} onPurchase={() => setView('purchase')} />}
-              {selectedWingo === '5min' && <Wingo5MinView onBack={() => setView('wingo_selection')} hasAccess={!!activePlan} onPurchase={() => setView('purchase')} />}
+              {selectedWingo === '30s' && <Wingo30sView onBack={() => setView('wingo_selection')} hasAccess={!!activePlan} onPurchase={() => navigateTo('purchase')} />}
+              {selectedWingo === '1min' && <Wingo1MinView onBack={() => setView('wingo_selection')} hasAccess={!!activePlan} onPurchase={() => navigateTo('purchase')} />}
+              {selectedWingo === '3min' && <Wingo3MinView onBack={() => setView('wingo_selection')} hasAccess={!!activePlan} onPurchase={() => navigateTo('purchase')} />}
+              {selectedWingo === '5min' && <Wingo5MinView onBack={() => setView('wingo_selection')} hasAccess={!!activePlan} onPurchase={() => navigateTo('purchase')} />}
+            </motion.div>
+          )}
+
+          {view === 'aviator' && (
+            <motion.div key="aviator" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <AviatorPredictionView />
+            </motion.div>
+          )}
+
+          {view === 'cricket' && (
+            <motion.div key="cricket" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <CricketPredictionView 
+                cricketMatches={cricketMatches} 
+                hasAccess={!!activePlan} 
+                onPurchase={() => navigateTo('purchase')} 
+              />
+            </motion.div>
+          )}
+
+          {view === 'stock' && (
+            <motion.div key="stock" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <StockPredictionView />
             </motion.div>
           )}
 
@@ -5909,7 +8073,22 @@ export const Dashboard: React.FC = () => {
                 onBack={() => navigateTo('home')} 
                 profile={profile}
                 setLatestError={setLatestError}
+                showToast={showToast}
               />
+            </motion.div>
+          )}
+
+          {view === 'game_settings' && (
+            <motion.div key="game_settings" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Wrench className="text-rose-500" /> Game Settings
+                </h2>
+                <button onClick={() => navigateTo('home')} className="text-slate-400 dark:text-white/40 hover:text-slate-900 dark:hover:text-white text-sm flex items-center gap-1 transition-colors">
+                  <ChevronLeft size={16} /> Back
+                </button>
+              </div>
+              <GameSettingsView showToast={showToast} />
             </motion.div>
           )}
 
@@ -5971,6 +8150,7 @@ export const Dashboard: React.FC = () => {
                 onPurchase={() => navigateTo('purchase')}
                 soundEnabled={soundEnabled}
                 toggleSound={toggleSound}
+                showToast={showToast}
               />
             </motion.div>
           )}
@@ -6003,6 +8183,12 @@ export const Dashboard: React.FC = () => {
             </motion.div>
           )}
 
+          {view === 'rewards' && (
+            <motion.div key="rewards" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <RewardsView profile={profile} onBack={() => navigateTo('home')} showToast={showToast} />
+            </motion.div>
+          )}
+
           {view === 'staking' && (
             <motion.div key="staking" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
               <StakingView profile={profile} onBack={() => navigateTo('home')} showToast={showToast} />
@@ -6028,6 +8214,24 @@ export const Dashboard: React.FC = () => {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl border-t border-slate-200 dark:border-white/10 z-50">
+        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-around">
+          {bottomNavItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => navigateTo(item.id as any)}
+              className={`flex flex-col items-center gap-1 transition-all ${
+                view === item.id ? 'text-emerald-500' : 'text-slate-400 dark:text-white/40'
+              }`}
+            >
+              <item.icon size={20} className={view === item.id ? 'scale-110' : ''} />
+              <span className="text-[10px] font-black uppercase tracking-widest">{item.label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
 
       <AnimatePresence>
         {toastMessage && (

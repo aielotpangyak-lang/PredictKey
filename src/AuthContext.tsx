@@ -33,6 +33,8 @@ interface AuthContextType {
   profile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
+  refreshProfile: () => Promise<void>;
+  blockError: string | null;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -40,15 +42,33 @@ const AuthContext = createContext<AuthContextType>({
   profile: null,
   loading: true,
   isAdmin: false,
+  refreshProfile: async () => {},
+  blockError: null,
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [blockError, setBlockError] = useState<string | null>(null);
+
+  const refreshProfile = async () => {
+    if (!user) return;
+    const userDoc = await getDoc(doc(db, 'users', user.uid));
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      if (data.isBlocked) {
+        setBlockError('Your account is blocked. Kindly contact customer service.');
+        await auth.signOut();
+        return;
+      }
+      setProfile({ id: userDoc.id, ...data } as UserProfile);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log('Auth state changed:', firebaseUser?.email);
       setUser(firebaseUser);
       if (firebaseUser) {
         const path = `users/${firebaseUser.uid}`;
@@ -66,6 +86,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           if (userDoc.exists()) {
             const data = userDoc.data();
+            if (data.isBlocked) {
+              setBlockError('Your account is blocked. Kindly contact customer service.');
+              await auth.signOut();
+              setLoading(false);
+              return;
+            }
             const existingProfile = { id: userDoc.id, ...data } as UserProfile;
             
             // Migration: Add missing fields if they don't exist
@@ -101,24 +127,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const referralCode = generateReferralCode(firebaseUser.email || '');
             
             // Check for pending referral
-            const pendingReferralCode = sessionStorage.getItem('pendingReferralCode');
-            let referredBy = undefined;
+            let pendingReferralCode = null;
+            try {
+              pendingReferralCode = sessionStorage.getItem('pendingReferralCode');
+            } catch (e) {
+              console.error('SessionStorage error:', e);
+            }
+            
+            let referredBy = null;
             if (pendingReferralCode) {
               referredBy = await trackReferral(pendingReferralCode, firebaseUser.uid);
-              sessionStorage.removeItem('pendingReferralCode');
+              try {
+                sessionStorage.removeItem('pendingReferralCode');
+              } catch (e) {
+                console.error('SessionStorage error:', e);
+              }
             }
 
-            const newProfileData = {
+            const newProfileData: any = {
               uid: shortUid,
               email: firebaseUser.email || '',
               role: firebaseUser.email === 'aielotpangyak@gmail.com' ? 'admin' : 'user',
               createdAt: serverTimestamp(),
               referralCode,
-              referredBy,
               referralCount: 0,
               walletBalance: 0,
               claimedRewards: [],
             };
+            
+            if (referredBy) {
+              newProfileData.referredBy = referredBy;
+            }
             await setDoc(doc(db, 'users', firebaseUser.uid), newProfileData);
             await setDoc(doc(db, 'users_public', firebaseUser.uid), {
               email: firebaseUser.email || '',
@@ -150,7 +189,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const isAdmin = profile?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isAdmin }}>
+    <AuthContext.Provider value={{ user, profile, loading, isAdmin, refreshProfile, blockError }}>
       {children}
     </AuthContext.Provider>
   );

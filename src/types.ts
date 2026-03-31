@@ -14,6 +14,7 @@ export interface UserProfile {
   role: UserRole;
   createdAt: any;
   isBlocked?: boolean;
+  isFrozen?: boolean;
   referralCode: string;
   referredBy?: string;
   referralCount: number;
@@ -22,8 +23,15 @@ export interface UserProfile {
   totalDeposits: number;
   claimedRewards: string[]; // e.g., ['3_referrals', '10_referrals', 'vip_2_reward']
   bankDetails?: BankDetails;
+  withdrawalDetails?: {
+    type: 'bank' | 'upi';
+    bank?: BankDetails;
+    upiId?: string;
+  };
   lastLoginRewardDate?: string; // YYYY-MM-DD
   lastSpinDate?: string; // YYYY-MM-DD
+  dailyFreeSpinsUsed?: number;
+  claimedVipRewards?: number[]; // Array of VIP levels already claimed
 }
 
 export interface Transaction {
@@ -90,6 +98,7 @@ export interface Prediction {
   period: string;
   content: string;
   timestamp: any;
+  status?: 'win' | 'loss' | 'pending';
 }
 
 export interface StrategyRequest {
@@ -139,6 +148,15 @@ export interface Achievement {
   earnedAt: any;
 }
 
+export interface PhysicalReward {
+  id: string;
+  userId: string;
+  item: string;
+  status: 'pending_claim' | 'pending_delivery' | 'delivered';
+  address?: string;
+  createdAt: any;
+}
+
 export interface Feedback {
   id: string;
   userId: string;
@@ -153,4 +171,86 @@ export interface LeaderboardEntry {
   userId: string;
   userName: string;
   totalEarnings: number;
+}
+
+// --- Prediction App Types ---
+
+export type WingoType = '30s' | '1min' | '3min' | '5min';
+
+export interface ColorPrediction {
+  id: string;
+  type: WingoType;
+  period: string;
+  prediction: {
+    color: 'Red' | 'Green' | 'Violet';
+    number: number;
+    size: 'Big' | 'Small';
+    confidence: number;
+  };
+  history: {
+    period: string;
+    result: {
+      color: 'Red' | 'Green' | 'Violet';
+      number: number;
+      size: 'Big' | 'Small';
+    };
+  }[];
+  trends: {
+    currentStreak: number;
+    streakType: 'Red' | 'Green' | 'Violet' | 'Big' | 'Small';
+  };
+}
+
+export interface CricketMatch {
+  id: string;
+  teams: { name: string; logo?: string; playingXI?: string[] }[];
+  time: any;
+  venue: string;
+  league?: string;
+  status: 'live' | 'upcoming' | 'finished';
+  actualWinner?: string;
+  predictionResult?: 'win' | 'loss' | 'pending';
+  predictions?: {
+    winProbability: { [teamName: string]: number };
+    topBatsman: string;
+    topBowler: string;
+    tossPrediction?: string;
+    expectedScoreRange: string;
+    whoWillWin?: string;
+  };
+  isLive: boolean;
+}
+
+export interface AviatorPrediction {
+  id: string;
+  multiplierRange: string; // e.g., "1.2x to 2.5x"
+  strategy: string; // e.g., "Safe cashout under 1.5x"
+  riskLevel: 'Low' | 'Medium' | 'High';
+  history: number[]; // last 10 round multipliers
+}
+
+export interface StockPrediction {
+  id: string;
+  name: string;
+  symbol: string;
+  currentPrice: number;
+  changePercent: number;
+  signal: 'Buy' | 'Sell' | 'Hold';
+  confidence: number;
+  insights: {
+    trend: string;
+    entry: number;
+    exit: number;
+    support: number;
+    resistance: number;
+    history: { date: string; price: number }[];
+  };
+  createdAt?: any;
+}
+
+export interface AdminSettings {
+  depositUpiId: string;
+  depositQrCode: string; // base64 or URL
+  minWithdrawalAmount: number;
+  upiId?: string; // fallback or additional
 }

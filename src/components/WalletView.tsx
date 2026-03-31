@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, orderBy, getDocs, getDoc, increment } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, setDoc, orderBy, getDocs, getDoc, increment } from 'firebase/firestore';
 import { db } from '../firebase';
-import { UserProfile, Transaction, BankDetails } from '../types';
+import { UserProfile, Transaction, BankDetails, AdminSettings } from '../types';
 import { usePlan } from '../PlanContext';
-import { ChevronLeft, Wallet, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, XCircle, Upload, Building2, Send, Download } from 'lucide-react';
+import { useAuth } from '../AuthContext';
+import { ChevronLeft, Wallet, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle2, XCircle, Upload, Building2, Send, Download, QrCode, Copy, RefreshCw } from 'lucide-react';
 
 interface WalletViewProps {
   profile: UserProfile;
@@ -14,26 +15,40 @@ interface WalletViewProps {
 
 const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) => {
   const { activePlan } = usePlan();
+  const { refreshProfile } = useAuth();
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'deposit' | 'withdraw' | 'transfer'>('overview');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [adminSettings, setAdminSettings] = useState<AdminSettings | null>(null);
 
   // Deposit State
   const [depositAmount, setDepositAmount] = useState('');
+  const [depositStep, setDepositStep] = useState<'amount' | 'payment'>('amount');
   const [depositUtr, setDepositUtr] = useState('');
   const [screenshotBase64, setScreenshotBase64] = useState('');
   const [isSubmittingDeposit, setIsSubmittingDeposit] = useState(false);
-  const [depositMethod, setDepositMethod] = useState<'upi' | 'crypto'>('upi');
 
   // Withdraw State
   const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [bankDetails, setBankDetails] = useState<BankDetails>(profile.bankDetails || {
+  const [withdrawType, setWithdrawType] = useState<'bank' | 'upi'>(profile.withdrawalDetails?.type || 'bank');
+  const [bankDetails, setBankDetails] = useState<BankDetails>(profile.withdrawalDetails?.bank || {
     accountName: '',
     accountNumber: '',
     ifscCode: '',
     bankName: ''
   });
+  const [upiId, setUpiId] = useState(profile.withdrawalDetails?.upiId || '');
   const [isSubmittingWithdraw, setIsSubmittingWithdraw] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'admin'), (doc) => {
+      if (doc.exists()) {
+        setAdminSettings(doc.data() as AdminSettings);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Transfer State
   const [transferAmount, setTransferAmount] = useState('');
@@ -100,17 +115,17 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
       await updateDoc(doc(db, 'users', profile.id), {
         walletBalance: increment(-totalDeduction)
       });
-      await updateDoc(doc(db, 'leaderboard', profile.id), {
+      await setDoc(doc(db, 'leaderboard', profile.id), {
         walletBalance: increment(-totalDeduction)
-      });
+      }, { merge: true });
 
       // Add to recipient
       await updateDoc(doc(db, 'users', transferUid), {
         walletBalance: increment(amount)
       });
-      await updateDoc(doc(db, 'leaderboard', transferUid), {
+      await setDoc(doc(db, 'leaderboard', transferUid), {
         walletBalance: increment(amount)
-      });
+      }, { merge: true });
 
       showToast(`Successfully transferred ₹${amount}`);
       setTransferAmount('');
@@ -222,36 +237,57 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
 
   const handleWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (profile.walletFrozen) {
+      showToast('Your account is frozen. Please contact customer service.');
+      return;
+    }
     const amount = Number(withdrawAmount);
-    if (!amount || amount < 1000) {
-      showToast('Minimum withdrawal is ₹1000');
+    const minWithdraw = adminSettings?.minWithdrawalAmount || 1000;
+    if (!amount || amount < minWithdraw) {
+      showToast(`Minimum withdrawal is ₹${minWithdraw}`);
       return;
     }
     if (amount > profile.walletBalance) {
       showToast('Insufficient wallet balance');
       return;
     }
-    if (!bankDetails.accountName || !bankDetails.accountNumber || !bankDetails.ifscCode || !bankDetails.bankName) {
-      showToast('Please fill all bank details');
-      return;
+    
+    if (withdrawType === 'bank') {
+      if (!bankDetails.accountName || !bankDetails.accountNumber || !bankDetails.ifscCode || !bankDetails.bankName) {
+        showToast('Please fill all bank details');
+        return;
+      }
+    } else {
+      if (!upiId.trim()) {
+        showToast('Please enter UPI ID');
+        return;
+      }
     }
 
     setIsSubmittingWithdraw(true);
     try {
-      // 1. Save bank details to profile if not already saved
-      if (!profile.bankDetails) {
-        await updateDoc(doc(db, 'users', profile.id), {
-          bankDetails
-        });
+      // 1. Save withdrawal details to profile
+      const withdrawalDetails: any = {
+        type: withdrawType
+      };
+      
+      if (withdrawType === 'bank') {
+        withdrawalDetails.bank = bankDetails;
+      } else if (withdrawType === 'upi') {
+        withdrawalDetails.upiId = upiId;
       }
+      
+      await updateDoc(doc(db, 'users', profile.id), {
+        withdrawalDetails
+      });
 
       // 2. Deduct balance immediately to prevent double spending
       await updateDoc(doc(db, 'users', profile.id), {
         walletBalance: profile.walletBalance - amount
       });
-      await updateDoc(doc(db, 'leaderboard', profile.id), {
+      await setDoc(doc(db, 'leaderboard', profile.id), {
         walletBalance: profile.walletBalance - amount
-      });
+      }, { merge: true });
 
       // 3. Create withdrawal request
       await addDoc(collection(db, 'transactions'), {
@@ -259,7 +295,7 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
         userEmail: profile.email,
         type: 'withdraw',
         amount,
-        bankDetails,
+        withdrawalDetails,
         status: 'pending',
         createdAt: serverTimestamp()
       });
@@ -287,9 +323,9 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
         walletBalance: profile.walletBalance + 10,
         lastLoginRewardDate: todayDateString
       });
-      await updateDoc(doc(db, 'leaderboard', profile.id), {
+      await setDoc(doc(db, 'leaderboard', profile.id), {
         walletBalance: profile.walletBalance + 10
-      });
+      }, { merge: true });
       showToast('🎉 Claimed ₹10 Daily Reward!');
     } catch (error) {
       console.error(error);
@@ -322,35 +358,40 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-3xl p-8 text-white relative overflow-hidden shadow-xl"
+        className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-3xl p-6 text-white relative overflow-hidden shadow-xl"
       >
         <div className="relative z-10">
-          <div className="flex justify-between items-start mb-2">
-            <p className="text-indigo-100 text-sm font-medium">AVAILABLE BALANCE</p>
-            {canClaimDailyReward && (
-              <button
-                onClick={handleDailyReward}
-                disabled={isClaimingReward}
-                className="bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1 shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
-              >
-                <CheckCircle2 size={14} /> Claim ₹10 Daily
-              </button>
-            )}
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <p className="text-indigo-100 text-xs font-bold uppercase tracking-widest mb-1">Available Balance</p>
+              <h3 className="text-4xl font-black tracking-tight">₹{profile.walletBalance.toLocaleString()}</h3>
+            </div>
+            <button 
+              onClick={async () => {
+                setIsRefreshing(true);
+                await refreshProfile();
+                setIsRefreshing(false);
+                showToast('Balance refreshed');
+              }}
+              disabled={isRefreshing}
+              className={`p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors ${isRefreshing ? 'animate-spin' : ''}`}
+            >
+              <RefreshCw size={16} />
+            </button>
           </div>
-          <h3 className="text-5xl font-black tracking-tight mb-8">₹{profile.walletBalance.toLocaleString()}</h3>
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <button 
               onClick={() => setActiveTab('deposit')}
-              className="bg-white/20 hover:bg-white/30 backdrop-blur-sm py-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition-colors"
+              className="bg-white/10 hover:bg-white/20 backdrop-blur-sm py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors"
             >
-              <ArrowDownLeft size={20} /> Deposit
+              <ArrowDownLeft size={16} /> Deposit
             </button>
             <button 
               onClick={() => setActiveTab('withdraw')}
-              className="bg-white text-indigo-600 hover:bg-indigo-50 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 transition-colors shadow-lg"
+              className="bg-white text-indigo-600 hover:bg-indigo-50 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-lg"
             >
-              <ArrowUpRight size={20} /> Withdraw
+              <ArrowUpRight size={16} /> Withdraw
             </button>
           </div>
         </div>
@@ -442,7 +483,7 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
                       </div>
                       <div>
                         <p className="font-bold capitalize">{tx.type.replace('_', ' ')}</p>
-                        <p className="text-xs text-slate-500">{tx.createdAt?.toDate().toLocaleDateString() || 'Just now'}</p>
+                        <p className="text-xs text-slate-500">{tx.createdAt?.toDate().toLocaleString() || 'Just now'}</p>
                       </div>
                     </div>
                     <div className="text-right">
@@ -468,42 +509,88 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
 
         {activeTab === 'deposit' && (
           <motion.div key="deposit" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="bg-indigo-50 dark:bg-indigo-500/10 p-6 rounded-3xl border border-indigo-100 dark:border-indigo-500/20 text-center">
-              <p className="text-sm text-indigo-600 dark:text-indigo-400 font-bold mb-2">Send Payment To</p>
-              <p className="text-2xl font-black text-slate-900 dark:text-white mb-4">admin@upi</p>
-              <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=upi://pay?pa=admin@upi&pn=Admin&cu=INR`} alt="QR Code" className="mx-auto rounded-xl shadow-md" />
-            </div>
-
-            <form onSubmit={handleDeposit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold mb-2">Amount (₹)</label>
-                <input type="number" value={depositAmount} onChange={e => setDepositAmount(e.target.value)} placeholder="Enter amount (Min ₹100)" className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required min="100" />
+            {depositStep === 'amount' ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-bold mb-2">Enter Deposit Amount (₹)</label>
+                  <input 
+                    type="number" 
+                    value={depositAmount} 
+                    onChange={e => setDepositAmount(e.target.value)} 
+                    placeholder="Min ₹100" 
+                    className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" 
+                    required 
+                  />
+                </div>
+                <button 
+                  onClick={() => {
+                    if (Number(depositAmount) < 100) {
+                      showToast('Minimum deposit is ₹100');
+                      return;
+                    }
+                    setDepositStep('payment');
+                  }}
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-colors"
+                >
+                  Next
+                </button>
               </div>
-              <div>
-                <label className="block text-sm font-bold mb-2">UTR / Reference Number</label>
-                <input type="text" value={depositUtr} onChange={e => setDepositUtr(e.target.value)} placeholder="Enter 12-digit UTR" className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
-              </div>
-              <div>
-                <label className="block text-sm font-bold mb-2">Payment Screenshot</label>
-                <div className="relative border-2 border-dashed border-slate-300 dark:border-white/20 rounded-xl p-6 text-center hover:bg-slate-50 dark:hover:bg-white/5 transition-colors cursor-pointer">
-                  <input type="file" accept="image/*" onChange={handleImageUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" required={!screenshotBase64} />
-                  {screenshotBase64 ? (
-                    <div className="space-y-2">
-                      <CheckCircle2 className="mx-auto text-emerald-500" size={32} />
-                      <p className="text-sm font-bold text-emerald-500">Screenshot Uploaded</p>
-                    </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="bg-indigo-50 dark:bg-indigo-500/10 p-6 rounded-3xl border border-indigo-100 dark:border-indigo-500/20 text-center">
+                  <p className="text-sm text-indigo-600 dark:text-indigo-400 font-bold mb-2">Send ₹{depositAmount} To</p>
+                  <p className="text-2xl font-black text-slate-900 dark:text-white mb-4">{adminSettings?.depositUpiId || 'admin@upi'}</p>
+                  {adminSettings?.depositQrCode ? (
+                    <img src={adminSettings.depositQrCode} alt="QR Code" className="mx-auto rounded-xl shadow-md w-48 h-48 object-contain bg-white p-2" />
                   ) : (
-                    <div className="space-y-2">
-                      <Upload className="mx-auto text-slate-400" size={32} />
-                      <p className="text-sm text-slate-500">Tap to upload screenshot (Max 1MB)</p>
+                    <div className="mx-auto w-48 h-48 bg-white rounded-xl shadow-md flex items-center justify-center">
+                      <QrCode size={64} className="text-slate-300" />
                     </div>
                   )}
+                  <button 
+                    onClick={() => {
+                      navigator.clipboard.writeText(adminSettings?.depositUpiId || 'admin@upi');
+                      showToast('UPI ID copied!');
+                    }}
+                    className="mt-4 text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center justify-center gap-1 mx-auto"
+                  >
+                    <Copy size={14} /> Copy UPI ID
+                  </button>
                 </div>
+
+                <form onSubmit={handleDeposit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-bold mb-2">UTR / Reference Number</label>
+                    <input type="text" value={depositUtr} onChange={e => setDepositUtr(e.target.value)} placeholder="Enter 12-digit UTR" className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold mb-2">Payment Screenshot</label>
+                    <div className="relative border-2 border-dashed border-slate-300 dark:border-white/20 rounded-xl p-6 text-center hover:bg-slate-50 dark:hover:bg-white/5 transition-colors cursor-pointer">
+                      <input type="file" accept="image/*" onChange={handleImageUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" required={!screenshotBase64} />
+                      {screenshotBase64 ? (
+                        <div className="space-y-2">
+                          <CheckCircle2 className="mx-auto text-emerald-500" size={32} />
+                          <p className="text-sm font-bold text-emerald-500">Screenshot Uploaded</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <Upload className="mx-auto text-slate-400" size={32} />
+                          <p className="text-sm text-slate-500">Tap to upload screenshot (Max 1MB)</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <button type="button" onClick={() => setDepositStep('amount')} className="flex-1 bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-white/60 font-bold py-4 rounded-xl transition-colors">
+                      Back
+                    </button>
+                    <button type="submit" disabled={isSubmittingDeposit} className="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-colors disabled:opacity-50">
+                      {isSubmittingDeposit ? 'Submitting...' : 'Submit Request'}
+                    </button>
+                  </div>
+                </form>
               </div>
-              <button type="submit" disabled={isSubmittingDeposit} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-colors disabled:opacity-50">
-                {isSubmittingDeposit ? 'Submitting...' : 'Submit Request'}
-              </button>
-            </form>
+            )}
           </motion.div>
         )}
 
@@ -512,35 +599,60 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
             <div className="bg-orange-50 dark:bg-orange-500/10 p-4 rounded-2xl border border-orange-100 dark:border-orange-500/20 flex items-start gap-3">
               <Building2 className="text-orange-500 shrink-0 mt-1" size={20} />
               <div>
-                <p className="text-sm font-bold text-orange-800 dark:text-orange-400">Bank Details Required</p>
-                <p className="text-xs text-orange-600 dark:text-orange-300 mt-1">Please ensure your bank details are correct. Withdrawals take 24-48 hours to process.</p>
+                <p className="text-sm font-bold text-orange-800 dark:text-orange-400">Minimum Withdrawal: ₹{adminSettings?.minWithdrawalAmount || 1000}</p>
+                <p className="text-xs text-orange-600 dark:text-orange-300 mt-1">Please ensure your details are correct. Withdrawals take 24-48 hours to process.</p>
               </div>
             </div>
 
             <form onSubmit={handleWithdraw} className="space-y-4">
               <div>
                 <label className="block text-sm font-bold mb-2">Withdrawal Amount (₹)</label>
-                <input type="number" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} placeholder={`Max: ₹${profile.walletBalance} (Min ₹500)`} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required min="500" max={profile.walletBalance} />
+                <input type="number" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} placeholder={`Max: ₹${profile.walletBalance}`} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required min={adminSettings?.minWithdrawalAmount || 1000} max={profile.walletBalance} />
               </div>
               
               <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-white/10">
-                <h4 className="font-bold">Bank Details</h4>
-                <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-500">Account Holder Name</label>
-                  <input type="text" value={bankDetails.accountName} onChange={e => setBankDetails({...bankDetails, accountName: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                <div className="flex gap-2 p-1 bg-slate-100 dark:bg-white/5 rounded-xl">
+                  <button 
+                    type="button"
+                    onClick={() => setWithdrawType('bank')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${withdrawType === 'bank' ? 'bg-white dark:bg-[#151619] text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    Bank Transfer
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setWithdrawType('upi')}
+                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${withdrawType === 'upi' ? 'bg-white dark:bg-[#151619] text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    UPI ID
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-500">Account Number</label>
-                  <input type="text" value={bankDetails.accountNumber} onChange={e => setBankDetails({...bankDetails, accountNumber: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-500">IFSC Code</label>
-                  <input type="text" value={bankDetails.ifscCode} onChange={e => setBankDetails({...bankDetails, ifscCode: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none uppercase" required />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold mb-1 text-slate-500">Bank Name</label>
-                  <input type="text" value={bankDetails.bankName} onChange={e => setBankDetails({...bankDetails, bankName: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
-                </div>
+
+                {withdrawType === 'bank' ? (
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-bold mb-1 text-slate-500">Account Holder Name</label>
+                      <input type="text" value={bankDetails.accountName} onChange={e => setBankDetails({...bankDetails, accountName: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold mb-1 text-slate-500">Account Number</label>
+                      <input type="text" value={bankDetails.accountNumber} onChange={e => setBankDetails({...bankDetails, accountNumber: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold mb-1 text-slate-500">IFSC Code</label>
+                      <input type="text" value={bankDetails.ifscCode} onChange={e => setBankDetails({...bankDetails, ifscCode: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none uppercase" required />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold mb-1 text-slate-500">Bank Name</label>
+                      <input type="text" value={bankDetails.bankName} onChange={e => setBankDetails({...bankDetails, bankName: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-bold mb-1 text-slate-500">UPI ID</label>
+                    <input type="text" value={upiId} onChange={e => setUpiId(e.target.value)} placeholder="username@upi" className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  </div>
+                )}
               </div>
 
               <button type="submit" disabled={isSubmittingWithdraw || Number(withdrawAmount) > profile.walletBalance} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-colors disabled:opacity-50 mt-4">

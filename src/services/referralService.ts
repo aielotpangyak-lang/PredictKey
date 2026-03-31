@@ -154,9 +154,9 @@ export const claimReferralReward = async (userId: string, rewardId: string) => {
       await updateDoc(userRef, {
         walletBalance: increment(reward.balance)
       });
-      await updateDoc(doc(db, 'leaderboard', userId), {
+      await setDoc(doc(db, 'leaderboard', userId), {
         walletBalance: increment(reward.balance)
-      });
+      }, { merge: true });
     }
 
     return { success: true, message: 'Reward claimed successfully!' };

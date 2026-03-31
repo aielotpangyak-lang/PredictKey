@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { Award, ChevronLeft, Star, Lock, CheckCircle2, Gift } from 'lucide-react';
 import { UserProfile } from '../types';
 import { db } from '../firebase';
-import { doc, updateDoc, arrayUnion, increment, addDoc, serverTimestamp, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, increment, addDoc, serverTimestamp, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
 
 interface VIPViewProps {
   profile: UserProfile;
@@ -16,46 +16,56 @@ const VIPView: React.FC<VIPViewProps> = ({ profile, onBack, showToast }) => {
   const currentVIP = profile.vipLevel || 1;
 
   const vipLevels = [
-    { level: 1, req: 0, reward: 300, perks: ['Standard Withdrawals', 'Basic Support'] },
-    { level: 2, req: 10000, reward: 1000, perks: ['Faster Withdrawals', 'Priority Support'] },
-    { level: 3, req: 50000, reward: 5000, perks: ['Instant Withdrawals', 'Dedicated Manager'] },
-    { level: 4, req: 100000, reward: 10000, perks: ['Zero Withdrawal Fees', 'Exclusive Events'] },
-    { level: 5, req: 500000, reward: 25000, perks: ['Luxury Gifts', 'VIP Tournaments'] },
-    { level: 6, req: 1000000, reward: 50000, perks: ['Custom Limits', 'Private Events'] },
-    { level: 7, req: 5000000, reward: 100000, perks: ['All Perks', 'Partner Status'] },
+    { level: 1, req: 500, reward: 500, perks: ['Standard Withdrawals', 'Basic Support'] },
+    { level: 2, req: 1000, reward: 1000, perks: ['Faster Withdrawals', 'Priority Support'] },
+    { level: 3, req: 5000, reward: 5000, perks: ['Instant Withdrawals', 'Dedicated Manager'] },
+    { level: 4, req: 10000, reward: 10000, perks: ['Zero Withdrawal Fees', 'Exclusive Events'] },
+    { level: 5, req: 25000, reward: 25000, perks: ['Luxury Gifts', 'VIP Tournaments'] },
+    { level: 6, req: 50000, reward: 50000, perks: ['Custom Limits', 'Private Events'] },
+    { level: 7, req: 100000, reward: 100000, perks: ['All Perks', 'Partner Status'] },
   ];
 
   const nextTier = vipLevels.find(v => v.level === currentVIP + 1);
   const progress = nextTier ? Math.min(100, (profile.totalDeposits / nextTier.req) * 100) : 100;
 
   const handleClaimReward = async (level: number, rewardAmount: number) => {
-    const rewardId = `vip_${level}_reward`;
-    if (profile.claimedRewards?.includes(rewardId)) {
+    if (profile.claimedVipRewards?.includes(level)) {
       showToast('Reward already claimed!');
+      return;
+    }
+
+    if (profile.totalDeposits < vipLevels.find(v => v.level === level)!.req) {
+      showToast('Insufficient total deposits to claim this reward!');
       return;
     }
 
     setIsClaiming(level);
     try {
+      const batch = writeBatch(db);
       const userRef = doc(db, 'users', profile.id);
-      await updateDoc(userRef, {
+      
+      batch.update(userRef, {
         walletBalance: increment(rewardAmount),
-        claimedRewards: arrayUnion(rewardId)
+        claimedVipRewards: arrayUnion(level),
+        vipLevel: Math.max(profile.vipLevel || 1, level)
       });
 
-      await addDoc(collection(db, 'transactions'), {
+      const txRef = doc(collection(db, 'transactions'));
+      batch.set(txRef, {
         userId: profile.id,
         type: 'deposit',
         amount: rewardAmount,
         status: 'approved',
-        notes: `VIP Level ${level} Achievement Reward`,
+        notes: `VIP Level ${level} Reward`,
         createdAt: serverTimestamp()
       });
 
+      await batch.commit();
+
       showToast(`Congratulations! ₹${rewardAmount} added to your wallet.`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error claiming VIP reward:', error);
-      showToast('Failed to claim reward. Please try again.');
+      showToast(error.message || 'Failed to claim reward. Please try again.');
     } finally {
       setIsClaiming(null);
     }
@@ -98,11 +108,12 @@ const VIPView: React.FC<VIPViewProps> = ({ profile, onBack, showToast }) => {
       <div className="space-y-4">
         <h3 className="text-lg font-bold text-slate-900 dark:text-white">VIP Tiers</h3>
         {vipLevels.map((tier) => {
-          const isUnlocked = currentVIP >= tier.level;
-          const isClaimed = profile.claimedRewards?.includes(`vip_${tier.level}_reward`);
+          const isUnlocked = profile.totalDeposits >= tier.req;
+          const isClaimed = profile.claimedVipRewards?.includes(tier.level);
+          const isCurrentLevel = currentVIP === tier.level;
           
           return (
-            <div key={tier.level} className={`bg-white dark:bg-[#151619] border ${currentVIP === tier.level ? 'border-yellow-500 shadow-lg shadow-yellow-500/10' : 'border-slate-200 dark:border-white/10'} rounded-2xl p-6 transition-all`}>
+            <div key={tier.level} className={`bg-white dark:bg-[#151619] border ${isCurrentLevel ? 'border-yellow-500 shadow-lg shadow-yellow-500/10' : 'border-slate-200 dark:border-white/10'} rounded-2xl p-6 transition-all`}>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-xl ${isUnlocked ? 'bg-yellow-500 text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-white/40'}`}>

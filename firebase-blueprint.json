@@ -13,9 +13,40 @@
         "referredBy": { "type": "string" },
         "referralCount": { "type": "number" },
         "walletBalance": { "type": "number" },
-        "claimedRewards": { "type": "array", "items": { "type": "string" } }
+        "claimedRewards": { "type": "array", "items": { "type": "string" } },
+        "isGiveawayEligible": { "type": "boolean" },
+        "dailyFreeSpinsUsed": { "type": "number" },
+        "lastSpinDate": { "type": "string", "format": "date-time" },
+        "claimedVipRewards": { "type": "array", "items": { "type": "number" } },
+        "withdrawalDetails": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["bank", "upi"] },
+            "bankDetails": {
+              "type": "object",
+              "properties": {
+                "accountHolderName": { "type": "string" },
+                "accountNumber": { "type": "string" },
+                "ifscCode": { "type": "string" },
+                "bankName": { "type": "string" }
+              }
+            },
+            "upiId": { "type": "string" }
+          }
+        }
       },
       "required": ["uid", "email", "role", "createdAt", "referralCode", "referralCount", "walletBalance", "claimedRewards"]
+    },
+    "AdminSettings": {
+      "title": "AdminSettings",
+      "description": "Global application settings managed by admin.",
+      "type": "object",
+      "properties": {
+        "depositUpiId": { "type": "string" },
+        "depositQrCode": { "type": "string" },
+        "minWithdrawalAmount": { "type": "number" }
+      },
+      "required": ["depositUpiId", "depositQrCode", "minWithdrawalAmount"]
     },
     "Purchase": {
       "title": "Purchase",
@@ -69,6 +100,89 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "userEmail", "rating", "comment", "isPublic", "createdAt"]
+    },
+    "PhysicalReward": {
+      "title": "PhysicalReward",
+      "description": "Physical rewards won by users.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "item": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending_claim", "pending_delivery", "delivered"] },
+        "address": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "item", "status", "createdAt"]
+    },
+    "CricketMatch": {
+      "title": "CricketMatch",
+      "description": "Cricket match details and AI predictions.",
+      "type": "object",
+      "properties": {
+        "teams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "logo": { "type": "string" }
+            }
+          }
+        },
+        "venue": { "type": "string" },
+        "time": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["upcoming", "live", "finished"] },
+        "isLive": { "type": "boolean" },
+        "predictions": {
+          "type": "object",
+          "properties": {
+            "winProbability": { "type": "object" },
+            "topBatsman": { "type": "string" },
+            "topBowler": { "type": "string" },
+            "tossPrediction": { "type": "string" },
+            "expectedScoreRange": { "type": "string" }
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["teams", "venue", "time", "status", "isLive", "predictions", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Log of administrative actions.",
+      "type": "object",
+      "properties": {
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "adminId": { "type": "string" },
+        "adminEmail": { "type": "string", "format": "email" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["action", "details", "adminId", "adminEmail", "timestamp"]
+    },
+    "Referral": {
+      "title": "Referral",
+      "description": "Referral tracking between users.",
+      "type": "object",
+      "properties": {
+        "referrerId": { "type": "string" },
+        "referredId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["referrerId", "referredId", "status", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Message in the chat room.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userEmail", "text", "timestamp"]
     }
   },
   "firestore": {
@@ -76,6 +190,13 @@
     "/purchases/{purchaseId}": { "schema": "Purchase", "description": "Purchase requests." },
     "/keys/{keyId}": { "schema": "Key", "description": "Active access keys." },
     "/predictions/{predictionId}": { "schema": "Prediction", "description": "Predictions data." },
-    "/feedbacks/{feedbackId}": { "schema": "Feedback", "description": "User feedbacks." }
+    "/feedbacks/{feedbackId}": { "schema": "Feedback", "description": "User feedbacks." },
+    "/giveaways/{giveawayId}": { "schema": "object", "description": "Giveaway results." },
+    "/settings/admin": { "schema": "AdminSettings", "description": "Global admin settings." },
+    "/physical_rewards/{rewardId}": { "schema": "PhysicalReward", "description": "Physical rewards won by users." },
+    "/cricketMatches/{matchId}": { "schema": "CricketMatch", "description": "Cricket match predictions." },
+    "/audit_logs/{logId}": { "schema": "AuditLog", "description": "Administrative audit logs." },
+    "/referrals/{referralId}": { "schema": "Referral", "description": "Referral records." },
+    "/chat/{messageId}": { "schema": "ChatMessage", "description": "Chat messages." }
   }
 }

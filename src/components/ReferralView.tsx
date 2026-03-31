@@ -5,14 +5,19 @@ import { UserProfile } from '../types';
 interface ReferralViewProps {
   profile: UserProfile | null;
   onBack: () => void;
+  showToast: (msg: string) => void;
 }
 
-const ReferralView: React.FC<ReferralViewProps> = ({ profile, onBack }) => {
+const ReferralView: React.FC<ReferralViewProps> = ({ profile, onBack, showToast }) => {
   const referralCode = profile?.referralCode || 'N/A';
 
   const copyCode = () => {
-    navigator.clipboard.writeText(referralCode);
-    alert('Referral code copied!');
+    try {
+      navigator.clipboard.writeText(referralCode);
+      showToast('Referral code copied!');
+    } catch (err) {
+      console.error('Clipboard error:', err);
+    }
   };
 
   return (

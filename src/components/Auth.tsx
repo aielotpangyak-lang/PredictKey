@@ -3,8 +3,10 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword, setPersiste
 import { auth } from '../firebase';
 import { motion } from 'motion/react';
 import { LogIn, UserPlus, Loader2, Send, KeyRound } from 'lucide-react';
+import { useAuth } from '../AuthContext';
 
 export const Auth: React.FC = () => {
+  const { blockError } = useAuth();
   const [view, setView] = useState<'login' | 'register' | 'forgot' | 'otp'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -65,7 +67,11 @@ export const Auth: React.FC = () => {
         
         // OTP is valid, create account
         if (referralCode) {
-          sessionStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
+          try {
+            sessionStorage.setItem('pendingReferralCode', referralCode.trim().toUpperCase());
+          } catch (e) {
+            console.error('SessionStorage error:', e);
+          }
         }
         await createUserWithEmailAndPassword(auth, email, password);
       } else if (view === 'forgot') {
@@ -104,6 +110,10 @@ export const Auth: React.FC = () => {
             {view === 'login' ? 'Sign in to access your dashboard' : view === 'register' ? 'Join PredictKey Pro today' : view === 'otp' ? 'Enter the 6-digit code sent to your email' : 'Enter your email to receive a reset link'}
           </p>
         </div>
+
+        {blockError && (
+          <p className="text-red-500 text-xs bg-red-500/10 p-3 rounded-lg border border-red-500/20 mb-4">{blockError}</p>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {view !== 'otp' && (
