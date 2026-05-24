@@ -19,6 +19,7 @@ export interface UserProfile {
   referredBy?: string;
   referralCount: number;
   walletBalance: number;
+  deviceId?: string;
   vipLevel: number; // 1 to 7
   totalDeposits: number;
   claimedRewards: string[]; // e.g., ['3_referrals', '10_referrals', 'vip_2_reward']
@@ -201,51 +202,12 @@ export interface ColorPrediction {
   };
 }
 
-export interface CricketMatch {
-  id: string;
-  teams: { name: string; logo?: string; playingXI?: string[] }[];
-  time: any;
-  venue: string;
-  league?: string;
-  status: 'live' | 'upcoming' | 'finished';
-  actualWinner?: string;
-  predictionResult?: 'win' | 'loss' | 'pending';
-  predictions?: {
-    winProbability: { [teamName: string]: number };
-    topBatsman: string;
-    topBowler: string;
-    tossPrediction?: string;
-    expectedScoreRange: string;
-    whoWillWin?: string;
-  };
-  isLive: boolean;
-}
-
 export interface AviatorPrediction {
   id: string;
   multiplierRange: string; // e.g., "1.2x to 2.5x"
   strategy: string; // e.g., "Safe cashout under 1.5x"
   riskLevel: 'Low' | 'Medium' | 'High';
   history: number[]; // last 10 round multipliers
-}
-
-export interface StockPrediction {
-  id: string;
-  name: string;
-  symbol: string;
-  currentPrice: number;
-  changePercent: number;
-  signal: 'Buy' | 'Sell' | 'Hold';
-  confidence: number;
-  insights: {
-    trend: string;
-    entry: number;
-    exit: number;
-    support: number;
-    resistance: number;
-    history: { date: string; price: number }[];
-  };
-  createdAt?: any;
 }
 
 export interface AdminSettings {

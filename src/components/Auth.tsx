@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, setPersistence, browserLocalPersistence, browserSessionPersistence, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase';
 import { motion } from 'motion/react';
-import { LogIn, UserPlus, Loader2, Send, KeyRound } from 'lucide-react';
+import { LogIn, UserPlus, Loader2, Send, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 
 export const Auth: React.FC = () => {
@@ -26,6 +26,24 @@ export const Auth: React.FC = () => {
 
   const strength = getPasswordStrength(password);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref');
+    if (ref) {
+      setReferralCode(ref.toUpperCase());
+      setView('register');
+    }
+  }, []);
+
+  const getDeviceId = () => {
+    let id = localStorage.getItem('app_device_id');
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem('app_device_id', id);
+    }
+    return id;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -34,7 +52,26 @@ export const Auth: React.FC = () => {
     try {
       await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence);
       if (view === 'login') {
-        await signInWithEmailAndPassword(auth, email, password);
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+        const deviceId = getDeviceId();
+
+        // Check hardware lock
+        const { getDoc, doc, updateDoc } = await import('firebase/firestore');
+        const { db } = await import('../firebase');
+        const userDoc = await getDoc(doc(db, 'users', user.uid));
+        
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          if (userData.role !== 'admin') {
+            if (userData.deviceId && userData.deviceId !== deviceId) {
+              await auth.signOut();
+              throw new Error('This account is locked to another device. Please contact support.');
+            } else if (!userData.deviceId) {
+              await updateDoc(doc(db, 'users', user.uid), { deviceId });
+            }
+          }
+        }
       } else if (view === 'register') {
         // Send OTP to email
         const response = await fetch('/api/send-otp', {
@@ -107,7 +144,7 @@ export const Auth: React.FC = () => {
             {view === 'login' ? 'Welcome Back' : view === 'register' ? 'Create Account' : view === 'otp' ? 'Verify Email' : 'Reset Password'}
           </h1>
           <p className="text-slate-500 dark:text-white/50 text-sm">
-            {view === 'login' ? 'Sign in to access your dashboard' : view === 'register' ? 'Join PredictKey Pro today' : view === 'otp' ? 'Enter the 6-digit code sent to your email' : 'Enter your email to receive a reset link'}
+            {view === 'login' ? 'Sign in to access your dashboard' : view === 'register' ? 'Join AI Predictor Pro today' : view === 'otp' ? 'Enter the 6-digit code sent to your email' : 'Enter your email to receive a reset link'}
           </p>
         </div>
 
@@ -239,7 +276,7 @@ export const Auth: React.FC = () => {
             disabled={loading}
             className={`w-full ${view === 'login' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20' : view === 'register' ? 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-900/20' : view === 'otp' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/20'} active:scale-95 disabled:opacity-50 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg`}
           >
-            {loading ? <Loader2 className="animate-spin" size={20} /> : (view === 'login' ? <LogIn size={20} /> : view === 'register' ? <UserPlus size={20} /> : view === 'otp' ? <KeyRound size={20} /> : <Send size={20} />)}
+            {loading ? <Loader2 className="animate-spin" size={20} /> : (view === 'login' ? <LogIn size={20} /> : view === 'register' ? <UserPlus size={20} /> : view === 'otp' ? <ShieldCheck size={20} /> : <Send size={20} />)}
             {view === 'login' ? 'Sign In' : view === 'register' ? 'Create Account' : view === 'otp' ? 'Verify & Register' : 'Send Reset Link'}
           </button>
         </form>
@@ -269,7 +306,7 @@ export const Auth: React.FC = () => {
             </p>
             <div className="grid grid-cols-1 gap-2">
               <a 
-                href="https://t.me/PredictKeyHelpBot"
+                href="https://t.me/PredictorHelpBot"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-[10px] font-bold py-2 rounded-lg transition-all border border-blue-500/20"

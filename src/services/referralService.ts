@@ -17,9 +17,9 @@ import { db } from '../firebase';
 import { UserProfile, Plan } from '../types';
 
 export const REFERRAL_REWARDS = [
-  { count: 3, label: '1 Week Free', id: '3_referrals', durationDays: 7 },
-  { count: 10, label: '1 Month Free', id: '10_referrals', durationDays: 30 },
-  { count: 50, label: '1 Year Free + ₹10,000', id: '50_referrals', durationDays: 365, balance: 10000 },
+  { count: 3, label: '₹500 Wallet Bonus', id: '3_referrals_cash', balance: 500 },
+  { count: 3, label: '7 Days Free Access', id: '3_referrals_time', durationDays: 7 },
+  { count: 10, label: '₹2,000 Wallet Bonus', id: '10_referrals_cash', balance: 2000 },
 ];
 
 export const generateReferralCode = (email: string) => {
@@ -139,14 +139,6 @@ export const claimReferralReward = async (userId: string, rewardId: string) => {
 
       await setDoc(planRef, planData, { merge: true });
 
-      // Create active key
-      await setDoc(doc(db, 'keys', `${userId}_active`), {
-        userId,
-        keyValue: `REWARD_${rewardId}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`,
-        expiresAt: Timestamp.fromDate(expiresAt),
-        isActive: true,
-        createdAt: serverTimestamp(),
-      });
     }
     
     if (reward.balance) {

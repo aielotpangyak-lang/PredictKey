@@ -54,15 +54,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshProfile = async () => {
     if (!user) return;
-    const userDoc = await getDoc(doc(db, 'users', user.uid));
-    if (userDoc.exists()) {
-      const data = userDoc.data();
-      if (data.isBlocked) {
-        setBlockError('Your account is blocked. Kindly contact customer service.');
-        await auth.signOut();
-        return;
+    
+    const fetchWithRetry = async (retries = 3, delay = 1000): Promise<any> => {
+      try {
+        const { getDocFromServer } = await import('firebase/firestore');
+        return await getDocFromServer(doc(db, 'users', user.uid));
+      } catch (err: any) {
+        if (retries > 0) {
+          console.warn(`refreshProfile getDoc failed, retrying... (${retries} retries left)`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return fetchWithRetry(retries - 1, delay * 2);
+        }
+        throw err;
       }
-      setProfile({ id: userDoc.id, ...data } as UserProfile);
+    };
+
+    try {
+      const userDoc = await fetchWithRetry();
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        if (data.isBlocked) {
+          setBlockError('Your account is blocked. Kindly contact customer service.');
+          await auth.signOut();
+          return;
+        }
+        setProfile({ id: userDoc.id, ...data } as UserProfile);
+      }
+    } catch (err) {
+      console.error('refreshProfile error:', err);
     }
   };
 
@@ -72,8 +91,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(firebaseUser);
       if (firebaseUser) {
         const path = `users/${firebaseUser.uid}`;
+        
+        const fetchWithRetry = async (retries = 5, delay = 1000): Promise<any> => {
+          try {
+            // Import the specific function to ensure we bypass cache if SDK thinks it is offline
+            const { getDocFromServer } = await import('firebase/firestore');
+            return await getDocFromServer(doc(db, 'users', firebaseUser.uid));
+          } catch (err: any) {
+            console.error(`Firestore fetch attempt failed: ${err.message}`);
+            if (retries > 0) {
+              const errorMessage = err.message.toLowerCase();
+              if (errorMessage.includes('offline') || errorMessage.includes('network') || errorMessage.includes('failed-precondition')) {
+                console.warn(`Firestore getDoc failed (${err.message}), retrying in ${delay}ms... (${retries} retries left)`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return fetchWithRetry(retries - 1, delay * 1.5);
+              }
+            }
+            throw err;
+          }
+        };
+
         try {
-          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          const userDoc = await fetchWithRetry();
           
           const generateShortUid = () => {
             const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

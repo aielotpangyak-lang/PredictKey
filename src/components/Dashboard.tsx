@@ -8,7 +8,7 @@ import { useAuth } from '../AuthContext';
 import { usePlan } from '../PlanContext';
 import { useTheme } from '../ThemeContext';
 import { processSuccessfulReferral, REFERRAL_REWARDS, claimReferralReward } from '../services/referralService';
-import { Purchase, Prediction, UserProfile, Notification, Coupon, ResetRequest, MasterPlanState, StrategyRequest, Feedback, Plan, Transaction, PhysicalReward, CricketMatch } from '../types';
+import { Purchase, Prediction, UserProfile, Notification, Coupon, ResetRequest, MasterPlanState, StrategyRequest, Feedback, Plan, Transaction, PhysicalReward } from '../types';
 import { DailyLogin } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -19,7 +19,6 @@ import SpinWheelView from './SpinWheelView';
 import RewardsView from './RewardsView';
 import StakingView from './StakingView';
 import UserAnalyticsView from './UserAnalyticsView';
-import AISupportView from './AISupportView';
 import LeaderboardView from './LeaderboardView';
 import AchievementsView from './AchievementsView';
 import PredictionStats from './PredictionStats';
@@ -29,14 +28,13 @@ import SocialView from './SocialView';
 import ColorPredictionView from './ColorPredictionView';
 import GameSettingsView from './GameSettingsView';
 import AviatorPredictionView from './AviatorPredictionView';
-import CricketPredictionView from './CricketPredictionView';
-import StockPredictionView from './StockPredictionView';
 import { AnalyticsView } from './AnalyticsView';
 import { FraudDetectionView } from './FraudDetectionView';
+import { FAQView } from './FAQView';
 import { GoogleGenAI, Type } from "@google/genai";
 import { 
   CreditCard, 
-  Key, 
+  ShoppingBag, 
   TrendingUp, 
   ShieldCheck, 
   Clock, 
@@ -69,6 +67,7 @@ import {
   Star,
   Zap,
   Activity,
+  ArrowUpRight,
   MessageSquare,
   ThumbsUp,
   Filter,
@@ -84,7 +83,7 @@ import {
   BarChart2,
   BarChart3,
   Gift,
-  ShoppingBag,
+  HelpCircle,
   Bot,
   Pencil,
   Sparkles,
@@ -370,7 +369,7 @@ const PurchaseView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">{final === 0 ? 'Access Activated!' : 'Payment Submitted'}</h2>
         <p className="text-slate-600 dark:text-white/50 mb-6">
           {final === 0 
-            ? 'Your 100% discount was applied and your key is now active.' 
+            ? 'Your 100% discount was applied and your plan is now active.' 
             : 'Your payment is under verification. Please wait for admin approval.'}
         </p>
         <button onClick={onBack} className="active:scale-95 hover:scale-[1.02] transition-transform bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-900 dark:text-white px-6 py-2 rounded-xl transition-all border border-slate-200 dark:border-white/10 shadow-sm">Back to Dashboard</button>
@@ -884,7 +883,7 @@ const PurchaseHistoryView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   );
 };
 
-const generateKeyStr = () => {
+const generatePlanIdStr = () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   const length = Math.floor(Math.random() * 3) + 10; // 10 to 12
   let result = '';
@@ -953,15 +952,18 @@ const ReferralView: React.FC<{
 
   const shareReferral = () => {
     if (profile?.referralCode) {
-      const text = `Join Wingo Master and get accurate predictions! Use my referral code: ${profile.referralCode}`;
+      const shareUrl = `${window.location.origin}?ref=${profile.referralCode}`;
+      const text = `Join AI Predictor and get accurate predictions! Use my referral code: ${profile.referralCode}`;
       if (navigator.share) {
         navigator.share({
-          title: 'Wingo Master Referral',
+          title: 'AI Predictor Referral',
           text: text,
-          url: window.location.origin
+          url: shareUrl
         });
       } else {
-        copyReferralCode();
+        const fullText = `${text}\n${shareUrl}`;
+        navigator.clipboard.writeText(fullText);
+        showToast('Referral link copied!');
       }
     }
   };
@@ -984,63 +986,65 @@ const ReferralView: React.FC<{
   };
 
   return (
-    <div className="space-y-6 pb-20">
-      <div className="flex items-center gap-3 mb-2">
-        <button onClick={onBack} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-          <ChevronLeft className="w-6 h-6" />
+    <div className="space-y-8 pb-24">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tighter">Refer & Earn</h2>
+        <button onClick={onBack} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-white/5 rounded-2xl text-slate-400 dark:text-white/40 hover:text-slate-900 dark:hover:text-white transition-colors">
+          <ChevronLeft size={20} />
         </button>
-        <h2 className="text-2xl font-bold">Refer & Earn</h2>
       </div>
 
       {/* Referral Card */}
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-3xl p-8 text-white relative overflow-hidden shadow-xl"
+        className="bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-[2.5rem] p-8 text-white relative overflow-hidden shadow-2xl shadow-emerald-500/20"
       >
-        <div className="relative z-10">
-          <p className="text-indigo-100 text-sm font-medium mb-2">YOUR REFERRAL CODE</p>
-          <div className="flex items-center gap-4 mb-6">
-            <span className="text-4xl font-black tracking-widest">{profile?.referralCode || '------'}</span>
-            <button 
-              onClick={copyReferralCode}
-              className="p-2 bg-white/20 hover:bg-white/30 rounded-xl transition-colors"
-            >
-              <Copy className="w-5 h-5" />
-            </button>
+        <div className="relative z-10 space-y-8">
+          <div>
+            <p className="text-emerald-100/60 text-[10px] font-black uppercase tracking-[0.2em] mb-4">Neural Invitation Code</p>
+            <div className="flex items-center justify-between bg-white/10 backdrop-blur-md rounded-3xl p-6 border border-white/20">
+              <span className="text-4xl font-black tracking-widest">{profile?.referralCode || '------'}</span>
+              <button 
+                onClick={copyReferralCode}
+                className="w-12 h-12 bg-white/20 hover:bg-white/30 rounded-2xl flex items-center justify-center transition-all active:scale-95"
+              >
+                <Copy size={20} />
+              </button>
+            </div>
           </div>
           
           <div className="grid grid-cols-2 gap-4">
-            <div className="bg-white/10 rounded-2xl p-4 backdrop-blur-sm">
-              <p className="text-indigo-100 text-xs mb-1">Total Referrals</p>
-              <p className="text-2xl font-bold">{profile?.referralCount || 0}</p>
+            <div className="bg-white/10 backdrop-blur-md rounded-[2rem] p-6 border border-white/20">
+              <p className="text-emerald-100/60 text-[10px] font-black uppercase tracking-widest mb-1">Total Referrals</p>
+              <p className="text-3xl font-black">{profile?.referralCount || 0}</p>
             </div>
-            <div className="bg-white/10 rounded-2xl p-4 backdrop-blur-sm">
-              <p className="text-indigo-100 text-xs mb-1">Wallet Balance</p>
-              <p className="text-2xl font-bold">₹{profile?.walletBalance || 0}</p>
+            <div className="bg-white/10 backdrop-blur-md rounded-[2rem] p-6 border border-white/20">
+              <p className="text-emerald-100/60 text-[10px] font-black uppercase tracking-widest mb-1">Success Bonus</p>
+              <p className="text-3xl font-black">₹{profile?.walletBalance || 0}</p>
             </div>
           </div>
 
           <button 
             onClick={shareReferral}
-            className="w-full mt-6 bg-white text-indigo-600 font-bold py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-indigo-50 transition-colors shadow-lg"
+            className="w-full bg-white text-emerald-600 font-black py-5 rounded-[2rem] flex items-center justify-center gap-3 hover:bg-emerald-50 transition-all shadow-xl active:scale-95 uppercase tracking-widest text-xs"
           >
-            <Share2 className="w-5 h-5" />
-            Share with Friends
+            <Share2 size={18} />
+            Propagate Referral Link
           </button>
         </div>
 
         {/* Decorative elements */}
-        <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-purple-500/20 rounded-full blur-3xl" />
+        <div className="absolute -top-10 -right-10 w-48 h-48 bg-white/10 rounded-full blur-[80px]" />
+        <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-emerald-400/20 rounded-full blur-[80px]" />
       </motion.div>
 
       {/* Rewards Section */}
-      <div className="space-y-4">
-        <h3 className="text-lg font-bold flex items-center gap-2">
-          <Trophy className="w-5 h-5 text-yellow-500" />
-          Milestone Rewards
-        </h3>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Milestone Nodes</h3>
+          <Trophy size={18} className="text-amber-500 animate-pulse" />
+        </div>
         
         <div className="grid gap-4">
           {REFERRAL_REWARDS.map((reward) => {
@@ -1049,43 +1053,44 @@ const ReferralView: React.FC<{
             const progress = Math.min(((profile?.referralCount || 0) / reward.count) * 100, 100);
 
             return (
-              <div key={reward.id} className="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 shadow-sm">
-                <div className="flex justify-between items-start mb-4">
+              <div key={reward.id} className="bg-white dark:bg-[#151619] rounded-[2.5rem] p-6 border border-slate-200 dark:border-white/10 shadow-sm relative overflow-hidden group">
+                <div className="flex justify-between items-start mb-6">
                   <div>
-                    <h4 className="font-bold text-slate-900 dark:text-white">{reward.label}</h4>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Refer {reward.count} active users</p>
+                    <h4 className="font-black text-slate-900 dark:text-white uppercase tracking-tight text-lg mb-1">{reward.label}</h4>
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 uppercase tracking-widest">Target: {reward.count} Active Users</p>
                   </div>
                   {isClaimed ? (
-                    <span className="bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
-                      <Check className="w-3 h-3" />
-                      Claimed
-                    </span>
+                    <div className="bg-emerald-500/10 text-emerald-500 text-[8px] font-black px-3 py-1.5 rounded-full flex items-center gap-1 uppercase tracking-widest border border-emerald-500/20">
+                      <Check size={10} />
+                      Synthesized
+                    </div>
                   ) : (
-                    <span className="text-indigo-600 dark:text-indigo-400 text-xs font-bold">
-                      {profile?.referralCount || 0}/{reward.count}
-                    </span>
+                    <div className="text-emerald-500 text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
+                      {profile?.referralCount || 0} / {reward.count}
+                    </div>
                   )}
                 </div>
 
-                <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full mb-4 overflow-hidden">
-                  <div 
-                    className={`h-full transition-all duration-500 ${isClaimed ? 'bg-emerald-500' : 'bg-indigo-600'}`}
-                    style={{ width: `${progress}%` }}
+                <div className="w-full bg-slate-100 dark:bg-white/5 h-2 rounded-full mb-6 overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${progress}%` }}
+                    className={`h-full transition-all duration-1000 ${isClaimed ? 'bg-emerald-500' : 'bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]'}`}
                   />
                 </div>
 
                 <button
                   disabled={!canClaim || isClaiming}
                   onClick={() => handleClaim(reward.id)}
-                  className={`w-full py-3 rounded-xl font-bold transition-all ${
+                  className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 ${
                     canClaim 
-                      ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-md active:scale-95' 
+                      ? 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-lg shadow-emerald-500/20' 
                       : isClaimed
-                        ? 'bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500 cursor-not-allowed'
-                        : 'bg-slate-50 dark:bg-slate-800/50 text-slate-300 dark:text-slate-600 cursor-not-allowed border border-dashed border-slate-200 dark:border-slate-700'
+                        ? 'bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-white/20 cursor-not-allowed border border-slate-200 dark:border-white/10'
+                        : 'bg-slate-50 dark:bg-white/5 text-slate-400 dark:text-white/10 cursor-not-allowed border border-dashed border-slate-200 dark:border-white/10'
                   }`}
                 >
-                  {isClaiming ? 'Processing...' : isClaimed ? 'Reward Claimed' : canClaim ? 'Claim Reward' : `Need ${reward.count - (profile?.referralCount || 0)} more`}
+                  {isClaiming ? 'Processing...' : isClaimed ? 'Reward Claimed' : canClaim ? 'Claim Node' : `Need ${reward.count - (profile?.referralCount || 0)} More`}
                 </button>
               </div>
             );
@@ -1094,35 +1099,24 @@ const ReferralView: React.FC<{
       </div>
 
       {/* Info Section */}
-      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 rounded-2xl p-5">
-        <div className="flex gap-3">
-          <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-800 dark:text-amber-200 space-y-2">
-            <p className="font-bold">How it works:</p>
-            <ul className="list-disc ml-4 space-y-1">
-              <li>Share your unique referral code with friends.</li>
-              <li>They must enter your code during registration.</li>
-              <li>When they purchase any plan, your referral count increases.</li>
-              <li>Reach milestones to unlock exclusive rewards!</li>
-            </ul>
-          </div>
+      <div className="bg-amber-500/5 dark:bg-amber-500/5 border border-amber-500/10 rounded-[2.5rem] p-8 space-y-4">
+        <div className="flex items-center gap-3 text-amber-500 mb-2">
+          <Info size={20} />
+          <span className="font-black uppercase tracking-widest text-xs text-amber-600/80">Neural Network Rules</span>
+        </div>
+        <div className="text-[10px] text-amber-900/60 dark:text-amber-200/40 font-bold uppercase tracking-widest leading-loose">
+          <p className="mb-2">• Successful referrals are counted when your link is used to create an account.</p>
+          <p className="mb-2">• Milestone rewards (7 Days Free or ₹500 Bonus) require 3 successful active referrals.</p>
+          <p className="mb-2">• Advanced milestone (₹2,000 Bonus) requires 10 successful active referrals.</p>
+          <p>• Exploitation of local network nodes will result in immediate synchronization termination.</p>
         </div>
       </div>
-
-      {/* Toast Notification */}
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
-            className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl z-50 flex items-center gap-2 whitespace-nowrap"
-          >
-            <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-            {toast}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-3 rounded-full shadow-2xl z-50 font-bold text-xs animate-bounce border border-white/20">
+          {toast}
+        </div>
+      )}
     </div>
   );
 };
@@ -1135,7 +1129,6 @@ const AdminPanel: React.FC<{
 }> = ({ onBack, profile, setLatestError, showToast }) => {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
-  const [cricketMatches, setCricketMatches] = useState<CricketMatch[]>([]);
   const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [resetRequests, setResetRequests] = useState<ResetRequest[]>([]);
@@ -1163,30 +1156,14 @@ const AdminPanel: React.FC<{
   const [appSettings, setAppSettings] = useState<any>({});
   const [editingSpinPrize, setEditingSpinPrize] = useState<{index: number, name: string, chance: number} | null>(null);
   const [selectedUserForEdit, setSelectedUserForEdit] = useState<any>(null);
+  const [userToEditWallet, setUserToEditWallet] = useState<any>(null);
+  const [userToEditProfile, setUserToEditProfile] = useState<any>(null);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [tabLoading, setTabLoading] = useState(false);
   const [dailyRewardClaimed, setDailyRewardClaimed] = useState(false);
   const [newPred, setNewPred] = useState({ period: '', content: '' });
-  const [newCricketMatch, setNewCricketMatch] = useState({
-    team1: '',
-    team2: '',
-    team1Logo: '',
-    team2Logo: '',
-    venue: '',
-    league: '',
-    matchTime: '',
-    winProbability1: 50,
-    winProbability2: 50,
-    topBatsman: '',
-    topBowler: '',
-    tossPrediction: '',
-    expectedScoreRange: '',
-    whoWillWin: '',
-    playingXI1: '',
-    playingXI2: ''
-  });
 
   const [isGeneratingPrediction, setIsGeneratingPrediction] = useState(false);
 
@@ -1418,19 +1395,6 @@ const AdminPanel: React.FC<{
         handleFirestoreError(err, OperationType.LIST, 'predictions');
         setTabLoading(false);
       });
-    } else if (activeTab === 'cricket_predictions') {
-      const qCricket = query(collection(db, 'cricketMatches'), orderBy('matchTime', 'desc'));
-      unsubscribe = onSnapshot(qCricket, (snapshot) => {
-        setCricketMatches(snapshot.docs.map(doc => ({ 
-          id: doc.id, 
-          ...doc.data(),
-          time: doc.data().time?.toDate ? doc.data().time.toDate() : new Date(doc.data().time || Date.now())
-        } as CricketMatch)));
-        setTabLoading(false);
-      }, (err) => {
-        handleFirestoreError(err, OperationType.LIST, 'cricketMatches');
-        setTabLoading(false);
-      });
     } else if (activeTab === 'coupons') {
       const qC = query(collection(db, 'coupons'));
       unsubscribe = onSnapshot(qC, (snapshot) => {
@@ -1471,7 +1435,7 @@ const AdminPanel: React.FC<{
       // Load settings for edit tabs
       const settingsToLoad = [
         'vip', 'giveaway', 'spin', 'staking', 'analytics', 'purchase', 
-        'referral', 'leaderboard', 'achievement', 'reward', 'talk', 'ai_support', 'app'
+        'referral', 'leaderboard', 'achievement', 'reward', 'talk', 'app'
       ];
       
       const unsubs = settingsToLoad.map(settingId => 
@@ -1803,486 +1767,6 @@ const AdminPanel: React.FC<{
     }
   };
 
-  const generateCricketPrediction = async () => {
-    if (!newCricketMatch.venue || !newCricketMatch.matchTime || !newCricketMatch.playingXI1 || !newCricketMatch.playingXI2) {
-      adminShowToast('Please fill Venue, Time, and Playing XIs first');
-      return;
-    }
-
-    setIsGeneratingPrediction(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const model = 'gemini-3-flash-preview';
-      
-      const prompt = `
-        Analyze this upcoming cricket match and provide predictions in JSON format.
-        Venue: ${newCricketMatch.venue}
-        Time: ${newCricketMatch.matchTime}
-        Team 1 Playing XI: ${newCricketMatch.playingXI1}
-        Team 2 Playing XI: ${newCricketMatch.playingXI2}
-
-        Based on the Playing XI, identify the Team Names.
-        Provide:
-        1. team1Name (string)
-        2. team2Name (string)
-        3. winProbability1 (number, 0-100)
-        4. winProbability2 (number, 0-100)
-        5. topBatsman (string, name of player from either team)
-        6. topBowler (string, name of player from either team)
-        7. tossPrediction (string, team name)
-        8. expectedScoreRange (string, e.g. "160-180")
-        9. whoWillWin (string, team name)
-        10. league (string, e.g. "IPL 2026" or "International T20")
-
-        Return ONLY the JSON.
-      `;
-
-      const response = await ai.models.generateContent({
-        model,
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              team1Name: { type: Type.STRING },
-              team2Name: { type: Type.STRING },
-              winProbability1: { type: Type.NUMBER },
-              winProbability2: { type: Type.NUMBER },
-              topBatsman: { type: Type.STRING },
-              topBowler: { type: Type.STRING },
-              tossPrediction: { type: Type.STRING },
-              expectedScoreRange: { type: Type.STRING },
-              whoWillWin: { type: Type.STRING },
-              league: { type: Type.STRING }
-            },
-            required: ["team1Name", "team2Name", "winProbability1", "winProbability2", "topBatsman", "topBowler", "tossPrediction", "expectedScoreRange", "whoWillWin", "league"]
-          }
-        }
-      });
-
-      const result = JSON.parse(response.text);
-      
-      setNewCricketMatch(prev => ({
-        ...prev,
-        team1: result.team1Name,
-        team2: result.team2Name,
-        winProbability1: result.winProbability1,
-        winProbability2: result.winProbability2,
-        topBatsman: result.topBatsman,
-        topBowler: result.topBowler,
-        tossPrediction: result.tossPrediction,
-        expectedScoreRange: result.expectedScoreRange,
-        whoWillWin: result.whoWillWin,
-        league: result.league
-      }));
-
-      adminShowToast('AI Prediction generated successfully!');
-    } catch (err) {
-      console.error('AI Generation Error:', err);
-      adminShowToast('Failed to generate AI prediction');
-    } finally {
-      setIsGeneratingPrediction(false);
-    }
-  };
-
-  const addCricketMatch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const path = 'cricketMatches';
-    try {
-      await addDoc(collection(db, path), {
-        teams: [
-          { 
-            name: newCricketMatch.team1, 
-            logo: newCricketMatch.team1Logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(newCricketMatch.team1)}&background=random&color=fff&size=128`,
-            playingXI: newCricketMatch.playingXI1.split(',').map(p => p.trim())
-          },
-          { 
-            name: newCricketMatch.team2, 
-            logo: newCricketMatch.team2Logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(newCricketMatch.team2)}&background=random&color=fff&size=128`,
-            playingXI: newCricketMatch.playingXI2.split(',').map(p => p.trim())
-          }
-        ],
-        venue: newCricketMatch.venue,
-        league: newCricketMatch.league,
-        time: new Date(newCricketMatch.matchTime),
-        status: 'upcoming',
-        isLive: false,
-        predictions: {
-          winProbability: {
-            [newCricketMatch.team1]: Number(newCricketMatch.winProbability1),
-            [newCricketMatch.team2]: Number(newCricketMatch.winProbability2)
-          },
-          topBatsman: newCricketMatch.topBatsman,
-          topBowler: newCricketMatch.topBowler,
-          tossPrediction: newCricketMatch.tossPrediction,
-          expectedScoreRange: newCricketMatch.expectedScoreRange,
-          whoWillWin: newCricketMatch.whoWillWin
-        },
-        createdAt: serverTimestamp()
-      });
-      setNewCricketMatch({
-        team1: '',
-        team2: '',
-        team1Logo: '',
-        team2Logo: '',
-        venue: '',
-        league: '',
-        matchTime: '',
-        winProbability1: 50,
-        winProbability2: 50,
-        topBatsman: '',
-        topBowler: '',
-        tossPrediction: '',
-        expectedScoreRange: '',
-        whoWillWin: '',
-        playingXI1: '',
-        playingXI2: ''
-      });
-      adminShowToast('Cricket match added successfully');
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, path);
-    }
-  };
-
-  const seedIPL2026Matches = async () => {
-    try {
-      setTabLoading(true);
-      const matches = [
-        {
-          teams: [
-            { name: 'KKR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/KKR/Logos/Logo+Entity/KKR_Logo.png' },
-            { name: 'SRH', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/SRH/Logos/Logo+Entity/SRH_Logo.png' }
-          ],
-          venue: 'Eden Gardens, Kolkata',
-          league: 'IPL 2026',
-          time: new Date('2026-03-28T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'KKR': 55, 'SRH': 45 },
-            topBatsman: 'Shreyas Iyer',
-            topBowler: 'Mitchell Starc',
-            tossPrediction: 'KKR to win toss and bowl',
-            expectedScoreRange: '175 - 195',
-            whoWillWin: 'KKR'
-          }
-        },
-        {
-          teams: [
-            { name: 'PBKS', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/PBKS/Logos/Logo+Entity/PBKS_Logo.png' },
-            { name: 'DC', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/DC/Logos/Logo+Entity/DC_Logo.png' }
-          ],
-          venue: 'Mullanpur Stadium, Chandigarh',
-          league: 'IPL 2026',
-          time: new Date('2026-03-29T15:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'PBKS': 48, 'DC': 52 },
-            topBatsman: 'Rishabh Pant',
-            topBowler: 'Kagiso Rabada',
-            tossPrediction: 'DC to win toss and bowl',
-            expectedScoreRange: '165 - 185',
-            whoWillWin: 'DC'
-          }
-        },
-        {
-          teams: [
-            { name: 'RR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RR/Logos/Logo+Entity/RR_Logo.png' },
-            { name: 'LSG', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/LSG/Logos/Logo+Entity/LSG_Logo.png' }
-          ],
-          venue: 'Sawai Mansingh Stadium, Jaipur',
-          league: 'IPL 2026',
-          time: new Date('2026-03-29T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'RR': 51, 'LSG': 49 },
-            topBatsman: 'Jos Buttler',
-            topBowler: 'Yuzvendra Chahal',
-            tossPrediction: 'RR to win toss and bat',
-            expectedScoreRange: '170 - 190',
-            whoWillWin: 'RR'
-          }
-        },
-        {
-          teams: [
-            { name: 'GT', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/GT/Logos/Logo+Entity/GT_Logo.png' },
-            { name: 'MI', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/MI/Logos/Logo+Entity/MI_Logo.png' }
-          ],
-          venue: 'Narendra Modi Stadium, Ahmedabad',
-          league: 'IPL 2026',
-          time: new Date('2026-03-30T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'GT': 47, 'MI': 53 },
-            topBatsman: 'Suryakumar Yadav',
-            topBowler: 'Jasprit Bumrah',
-            tossPrediction: 'MI to win toss and bowl',
-            expectedScoreRange: '180 - 200',
-            whoWillWin: 'MI'
-          }
-        },
-        {
-          teams: [
-            { name: 'RCB', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RCB/Logos/Logo+Entity/RCB_Logo.png' },
-            { name: 'CSK', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/CSK/Logos/Logo+Entity/CSK_Logo.png' }
-          ],
-          venue: 'M. Chinnaswamy Stadium, Bengaluru',
-          league: 'IPL 2026',
-          time: new Date('2026-03-31T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'RCB': 50, 'CSK': 50 },
-            topBatsman: 'Virat Kohli',
-            topBowler: 'Ravindra Jadeja',
-            tossPrediction: 'RCB to win toss and bowl',
-            expectedScoreRange: '190 - 210',
-            whoWillWin: 'RCB'
-          }
-        },
-        {
-          teams: [
-            { name: 'SRH', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/SRH/Logos/Logo+Entity/SRH_Logo.png' },
-            { name: 'MI', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/MI/Logos/Logo+Entity/MI_Logo.png' }
-          ],
-          venue: 'Rajiv Gandhi Intl. Stadium, Hyderabad',
-          league: 'IPL 2026',
-          time: new Date('2026-04-01T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'SRH': 49, 'MI': 51 },
-            topBatsman: 'Heinrich Klaasen',
-            topBowler: 'Pat Cummins',
-            tossPrediction: 'SRH to win toss and bowl',
-            expectedScoreRange: '185 - 205',
-            whoWillWin: 'MI'
-          }
-        },
-        {
-          teams: [
-            { name: 'KKR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/KKR/Logos/Logo+Entity/KKR_Logo.png' },
-            { name: 'RCB', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RCB/Logos/Logo+Entity/RCB_Logo.png' }
-          ],
-          venue: 'Eden Gardens, Kolkata',
-          league: 'IPL 2026',
-          time: new Date('2026-04-02T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'KKR': 52, 'RCB': 48 },
-            topBatsman: 'Phil Salt',
-            topBowler: 'Varun Chakaravarthy',
-            tossPrediction: 'RCB to win toss and bowl',
-            expectedScoreRange: '175 - 195',
-            whoWillWin: 'KKR'
-          }
-        },
-        {
-          teams: [
-            { name: 'DC', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/DC/Logos/Logo+Entity/DC_Logo.png' },
-            { name: 'RR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RR/Logos/Logo+Entity/RR_Logo.png' }
-          ],
-          venue: 'Arun Jaitley Stadium, Delhi',
-          league: 'IPL 2026',
-          time: new Date('2026-04-03T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'DC': 46, 'RR': 54 },
-            topBatsman: 'Yashasvi Jaiswal',
-            topBowler: 'Trent Boult',
-            tossPrediction: 'RR to win toss and bat',
-            expectedScoreRange: '160 - 180',
-            whoWillWin: 'RR'
-          }
-        },
-        {
-          teams: [
-            { name: 'LSG', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/LSG/Logos/Logo+Entity/LSG_Logo.png' },
-            { name: 'PBKS', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/PBKS/Logos/Logo+Entity/PBKS_Logo.png' }
-          ],
-          venue: 'Ekana Stadium, Lucknow',
-          league: 'IPL 2026',
-          time: new Date('2026-04-04T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'LSG': 53, 'PBKS': 47 },
-            topBatsman: 'KL Rahul',
-            topBowler: 'Ravi Bishnoi',
-            tossPrediction: 'LSG to win toss and bowl',
-            expectedScoreRange: '155 - 175',
-            whoWillWin: 'LSG'
-          }
-        },
-        {
-          teams: [
-            { name: 'GT', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/GT/Logos/Logo+Entity/GT_Logo.png' },
-            { name: 'CSK', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/CSK/Logos/Logo+Entity/CSK_Logo.png' }
-          ],
-          venue: 'Narendra Modi Stadium, Ahmedabad',
-          league: 'IPL 2026',
-          time: new Date('2026-04-05T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'GT': 49, 'CSK': 51 },
-            topBatsman: 'Ruturaj Gaikwad',
-            topBowler: 'Rashid Khan',
-            tossPrediction: 'CSK to win toss and bowl',
-            expectedScoreRange: '170 - 190',
-            whoWillWin: 'CSK'
-          }
-        },
-        {
-          teams: [
-            { name: 'MI', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/MI/Logos/Logo+Entity/MI_Logo.png' },
-            { name: 'RR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RR/Logos/Logo+Entity/RR_Logo.png' }
-          ],
-          venue: 'Wankhede Stadium, Mumbai',
-          league: 'IPL 2026',
-          time: new Date('2026-04-06T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'MI': 52, 'RR': 48 },
-            topBatsman: 'Suryakumar Yadav',
-            topBowler: 'Jasprit Bumrah',
-            tossPrediction: 'MI to win toss and bowl',
-            expectedScoreRange: '185 - 205',
-            whoWillWin: 'MI'
-          }
-        },
-        {
-          teams: [
-            { name: 'RCB', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/RCB/Logos/Logo+Entity/RCB_Logo.png' },
-            { name: 'LSG', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/LSG/Logos/Logo+Entity/LSG_Logo.png' }
-          ],
-          venue: 'M. Chinnaswamy Stadium, Bengaluru',
-          league: 'IPL 2026',
-          time: new Date('2026-04-07T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'RCB': 54, 'LSG': 46 },
-            topBatsman: 'Virat Kohli',
-            topBowler: 'Mohammed Siraj',
-            tossPrediction: 'RCB to win toss and bowl',
-            expectedScoreRange: '195 - 215',
-            whoWillWin: 'RCB'
-          }
-        },
-        {
-          teams: [
-            { name: 'CSK', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/CSK/Logos/Logo+Entity/CSK_Logo.png' },
-            { name: 'KKR', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/KKR/Logos/Logo+Entity/KKR_Logo.png' }
-          ],
-          venue: 'MA Chidambaram Stadium, Chennai',
-          league: 'IPL 2026',
-          time: new Date('2026-04-08T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'CSK': 51, 'KKR': 49 },
-            topBatsman: 'Ruturaj Gaikwad',
-            topBowler: 'Ravindra Jadeja',
-            tossPrediction: 'CSK to win toss and bowl',
-            expectedScoreRange: '165 - 185',
-            whoWillWin: 'CSK'
-          }
-        },
-        {
-          teams: [
-            { name: 'PBKS', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/PBKS/Logos/Logo+Entity/PBKS_Logo.png' },
-            { name: 'GT', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/GT/Logos/Logo+Entity/GT_Logo.png' }
-          ],
-          venue: 'Mullanpur Stadium, Chandigarh',
-          league: 'IPL 2026',
-          time: new Date('2026-04-09T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'PBKS': 47, 'GT': 53 },
-            topBatsman: 'Shubman Gill',
-            topBowler: 'Rashid Khan',
-            tossPrediction: 'GT to win toss and bowl',
-            expectedScoreRange: '170 - 190',
-            whoWillWin: 'GT'
-          }
-        },
-        {
-          teams: [
-            { name: 'SRH', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/SRH/Logos/Logo+Entity/SRH_Logo.png' },
-            { name: 'DC', logo: 'https://bcciplayerimages.s3.ap-south-1.amazonaws.com/ipl/DC/Logos/Logo+Entity/DC_Logo.png' }
-          ],
-          venue: 'Rajiv Gandhi Intl. Stadium, Hyderabad',
-          league: 'IPL 2026',
-          time: new Date('2026-04-10T19:30:00+05:30'),
-          status: 'upcoming',
-          isLive: false,
-          predictions: {
-            winProbability: { 'SRH': 55, 'DC': 45 },
-            topBatsman: 'Travis Head',
-            topBowler: 'Pat Cummins',
-            tossPrediction: 'SRH to win toss and bat',
-            expectedScoreRange: '190 - 210',
-            whoWillWin: 'SRH'
-          }
-        }
-      ];
-
-      for (const match of matches) {
-        await addDoc(collection(db, 'cricketMatches'), match);
-      }
-
-      showToast('IPL 2026 Matches seeded successfully!');
-    } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'cricketMatches');
-    } finally {
-      setTabLoading(false);
-    }
-  };
-
-  const deleteCricketMatch = async (id: string) => {
-    const path = `cricketMatches/${id}`;
-    try {
-      await deleteDoc(doc(db, 'cricketMatches', id));
-      adminShowToast('Cricket match deleted');
-    } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, path);
-    }
-  };
-
-  const updateCricketMatchStatus = async (id: string, status: 'upcoming' | 'live' | 'finished') => {
-    const path = `cricketMatches/${id}`;
-    try {
-      await updateDoc(doc(db, 'cricketMatches', id), { 
-        status,
-        isLive: status === 'live'
-      });
-      adminShowToast(`Match marked as ${status}`);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, path);
-    }
-  };
-
-  const updateCricketMatchWhoWillWin = async (id: string, whoWillWin: string) => {
-    const path = `cricketMatches/${id}`;
-    try {
-      await updateDoc(doc(db, 'cricketMatches', id), { 
-        'predictions.whoWillWin': whoWillWin
-      });
-      adminShowToast(`Winner prediction updated`);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, path);
-    }
-  };
-
   const addCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCoupon.code || newCoupon.discountPercent <= 0) return;
@@ -2437,7 +1921,6 @@ const AdminPanel: React.FC<{
               title: 'Game & Content Management',
               items: [
                 { id: 'predictions', label: 'Predictions', icon: TrendingUp, desc: 'Post new AI predictions', count: predictions.length, color: 'text-indigo-500 bg-indigo-500/10' },
-                { id: 'cricket_predictions', label: 'Cricket Predictions', icon: Trophy, desc: 'Manage cricket matches', count: cricketMatches.length, color: 'text-emerald-500 bg-emerald-500/10' },
                 { id: 'coupons', label: 'Coupon Codes', icon: CreditCard, desc: 'Create discount coupons', count: coupons.length, color: 'text-amber-500 bg-amber-500/10' },
                 { id: 'rewards', label: 'Physical Rewards', icon: Gift, desc: 'Manage claimed rewards', count: physicalRewards.filter(r => r.status === 'pending_delivery').length, color: 'text-pink-500 bg-pink-500/10' },
                 { id: 'reward_edit', label: 'Reward Edit', icon: Gift, desc: 'Add rewards to users', color: 'text-pink-500 bg-pink-500/10' },
@@ -2451,7 +1934,6 @@ const AdminPanel: React.FC<{
                 { id: 'leaderboard_edit', label: 'Leaderboard Edit', icon: Trophy, desc: 'Edit leaderboard rules', color: 'text-yellow-500 bg-yellow-500/10' },
                 { id: 'achievement_edit', label: 'Achievement Edit', icon: Award, desc: 'Edit achievements', color: 'text-purple-500 bg-purple-500/10' },
                 { id: 'talk_edit', label: 'Talks Edit', icon: MessageSquare, desc: 'Edit welcome message', color: 'text-cyan-500 bg-cyan-500/10' },
-                { id: 'ai_support_edit', label: 'AI Support Edit', icon: MessageSquare, desc: 'Edit system prompt', color: 'text-orange-500 bg-orange-500/10' },
               ]
             },
             {
@@ -2510,7 +1992,7 @@ const AdminPanel: React.FC<{
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search users, UIDs, or keys..."
+              placeholder="Search users, UIDs, or plans..."
               className="w-full bg-transparent border-none focus:ring-0 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/20 text-sm"
             />
           </div>
@@ -2844,362 +2326,6 @@ const AdminPanel: React.FC<{
           </motion.section>
         )}
 
-        {activeTab === 'cricket_predictions' && (
-          <motion.section
-            key="cricket_predictions"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="space-y-6"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Trophy className="text-emerald-500" /> Cricket Predictions
-              </h3>
-              <div className="flex items-center gap-4">
-                <button 
-                  onClick={seedIPL2026Matches}
-                  className="text-[10px] font-black uppercase tracking-widest bg-white/5 hover:bg-white/10 text-white/40 hover:text-white px-3 py-2 rounded-lg border border-white/10 transition-all"
-                >
-                  Seed IPL 2026 Matches
-                </button>
-                <div className="text-xs text-white/40 font-bold uppercase tracking-widest">
-                  {cricketMatches.length} Matches
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-[#151619] border border-white/10 rounded-2xl p-6 space-y-6 shadow-xl">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-bold text-white">Add New Match (Simplified)</h4>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="file"
-                    accept=".json,.csv"
-                    className="hidden"
-                    id="match-import-input"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      
-                      try {
-                        const text = await file.text();
-                        let matchesData: any[] = [];
-                        
-                        if (file.name.endsWith('.json')) {
-                          matchesData = JSON.parse(text);
-                          if (!Array.isArray(matchesData)) {
-                            matchesData = [matchesData];
-                          }
-                        } else if (file.name.endsWith('.csv')) {
-                          // Basic CSV parsing
-                          const lines = text.split('\n');
-                          const headers = lines[0].split(',').map(h => h.trim());
-                          
-                          for (let i = 1; i < lines.length; i++) {
-                            if (!lines[i].trim()) continue;
-                            const values = lines[i].split(',').map(v => v.trim());
-                            const matchObj: any = {};
-                            headers.forEach((h, index) => {
-                              matchObj[h] = values[index];
-                            });
-                            matchesData.push(matchObj);
-                          }
-                        }
-                        
-                        // Process imported matches
-                        for (const match of matchesData) {
-                          // Basic validation
-                          if (match.team1 && match.team2 && match.venue && match.time) {
-                            await addDoc(collection(db, 'cricketMatches'), {
-                              teams: [
-                                { name: match.team1, logo: match.team1Logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(match.team1)}&background=random&color=fff&size=128` },
-                                { name: match.team2, logo: match.team2Logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(match.team2)}&background=random&color=fff&size=128` }
-                              ],
-                              venue: match.venue,
-                              league: match.league || 'Imported Match',
-                              time: new Date(match.time),
-                              status: match.status || 'upcoming',
-                              isLive: match.status === 'live',
-                              predictions: match.predictions || null,
-                              createdAt: serverTimestamp()
-                            });
-                          }
-                        }
-                        
-                        showToast(`Successfully imported ${matchesData.length} matches!`);
-                        // Reset input
-                        e.target.value = '';
-                      } catch (err) {
-                        console.error('Import error:', err);
-                        showToast('Failed to import matches. Check file format.');
-                      }
-                    }}
-                  />
-                  <label
-                    htmlFor="match-import-input"
-                    className="cursor-pointer flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-500/20"
-                  >
-                    <Sparkles size={14} />
-                    Import JSON/CSV
-                  </label>
-                  <button
-                    type="button"
-                    onClick={generateCricketPrediction}
-                    disabled={isGeneratingPrediction || !newCricketMatch.venue || !newCricketMatch.matchTime || !newCricketMatch.playingXI1 || !newCricketMatch.playingXI2}
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-white/5 disabled:text-white/20 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg shadow-emerald-500/20"
-                  >
-                    {isGeneratingPrediction ? (
-                      <>
-                        <RefreshCw size={14} className="animate-spin" />
-                        Generating AI Prediction...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles size={14} />
-                        Generate AI Prediction
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Match Time</label>
-                    <input
-                      type="datetime-local"
-                      value={newCricketMatch.matchTime}
-                      onChange={(e) => setNewCricketMatch({ ...newCricketMatch, matchTime: e.target.value })}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Venue</label>
-                    <input
-                      type="text"
-                      value={newCricketMatch.venue}
-                      onChange={(e) => setNewCricketMatch({ ...newCricketMatch, venue: e.target.value })}
-                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
-                      placeholder="e.g., MCG, Melbourne"
-                      required
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Team 1 (Optional)</label>
-                      <input
-                        type="text"
-                        value={newCricketMatch.team1}
-                        onChange={(e) => setNewCricketMatch({ ...newCricketMatch, team1: e.target.value })}
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
-                        placeholder="Auto-detected"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Team 2 (Optional)</label>
-                      <input
-                        type="text"
-                        value={newCricketMatch.team2}
-                        onChange={(e) => setNewCricketMatch({ ...newCricketMatch, team2: e.target.value })}
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
-                        placeholder="Auto-detected"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Team 1 Playing XI (Comma separated)</label>
-                    <textarea
-                      value={newCricketMatch.playingXI1}
-                      onChange={(e) => setNewCricketMatch({ ...newCricketMatch, playingXI1: e.target.value })}
-                      className="w-full h-24 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors resize-none text-xs"
-                      placeholder="Player 1, Player 2, ..."
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Team 2 Playing XI (Comma separated)</label>
-                    <textarea
-                      value={newCricketMatch.playingXI2}
-                      onChange={(e) => setNewCricketMatch({ ...newCricketMatch, playingXI2: e.target.value })}
-                      className="w-full h-24 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors resize-none text-xs"
-                      placeholder="Player 1, Player 2, ..."
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {newCricketMatch.whoWillWin && (
-                <motion.div 
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4 space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">AI Generated Prediction</span>
-                    <span className="text-xs font-bold text-white">{newCricketMatch.league}</span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <div>
-                      <div className="text-[8px] font-black text-white/30 uppercase tracking-widest mb-1">Win Probability</div>
-                      <div className="text-xs font-bold text-white">{newCricketMatch.team1}: {newCricketMatch.winProbability1}% | {newCricketMatch.team2}: {newCricketMatch.winProbability2}%</div>
-                    </div>
-                    <div>
-                      <div className="text-[8px] font-black text-white/30 uppercase tracking-widest mb-1">Top Batsman</div>
-                      <div className="text-xs font-bold text-white">{newCricketMatch.topBatsman}</div>
-                    </div>
-                    <div>
-                      <div className="text-[8px] font-black text-white/30 uppercase tracking-widest mb-1">Top Bowler</div>
-                      <div className="text-xs font-bold text-white">{newCricketMatch.topBowler}</div>
-                    </div>
-                    <div>
-                      <div className="text-[8px] font-black text-white/30 uppercase tracking-widest mb-1">Expected Score</div>
-                      <div className="text-xs font-bold text-white">{newCricketMatch.expectedScoreRange}</div>
-                    </div>
-                  </div>
-                  <div className="pt-2 border-t border-emerald-500/10 flex items-center justify-between">
-                    <div className="text-xs font-bold text-white">Verdict: <span className="text-emerald-400">{newCricketMatch.whoWillWin} will win</span></div>
-                    <div className="text-xs font-bold text-white">Toss: <span className="text-emerald-400">{newCricketMatch.tossPrediction}</span></div>
-                  </div>
-                </motion.div>
-              )}
-
-              <button
-                onClick={addCricketMatch}
-                disabled={!newCricketMatch.team1 || !newCricketMatch.team2 || !newCricketMatch.matchTime}
-                className="w-full bg-white text-black font-black py-4 rounded-xl transition-all hover:bg-white/90 disabled:bg-white/10 disabled:text-white/20 text-sm uppercase tracking-widest"
-              >
-                Save & Publish Match
-              </button>
-            </div>
-
-            <div className="grid gap-4">
-              {tabLoading ? (
-                <div className="flex justify-center py-12"><Clock className="animate-spin text-white/20" size={32} /></div>
-              ) : cricketMatches.length === 0 ? (
-                <div className="text-center py-12 bg-white/5 rounded-2xl border border-dashed border-white/10">
-                  <p className="text-white/30">No cricket matches added yet.</p>
-                </div>
-              ) : (
-                cricketMatches.map((match) => (
-                  <div key={match.id} className="bg-[#151619] border border-white/10 rounded-2xl p-6 flex flex-col gap-4 group hover:border-emerald-500/30 transition-all">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="flex items-center gap-2">
-                          <img src={match.teams[0].logo} alt={match.teams[0].name} className="w-8 h-8 rounded-full bg-white/10 object-cover" />
-                          <span className="text-white font-bold">{match.teams[0].name}</span>
-                        </div>
-                        <span className="text-white/50 font-bold text-sm">VS</span>
-                        <div className="flex items-center gap-2">
-                          <img src={match.teams[1].logo} alt={match.teams[1].name} className="w-8 h-8 rounded-full bg-white/10 object-cover" />
-                          <span className="text-white font-bold">{match.teams[1].name}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-widest ${
-                          match.status === 'live' ? 'bg-red-500/20 text-red-500 animate-pulse' :
-                          match.status === 'finished' ? 'bg-slate-500/20 text-slate-400' :
-                          'bg-emerald-500/20 text-emerald-500'
-                        }`}>
-                          {match.status}
-                        </span>
-                        <div className="flex bg-black/40 rounded-lg p-1">
-                          <button onClick={() => updateCricketMatchStatus(match.id, 'upcoming')} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${match.status === 'upcoming' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white'}`}>Upcoming</button>
-                          <button onClick={() => updateCricketMatchStatus(match.id, 'live')} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${match.status === 'live' ? 'bg-red-500/20 text-red-500' : 'text-white/40 hover:text-white'}`}>Live</button>
-                          <button onClick={() => updateCricketMatchStatus(match.id, 'finished')} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${match.status === 'finished' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white'}`}>Done</button>
-                        </div>
-                        <div className="flex items-center gap-2 bg-black/40 rounded-lg px-2 py-1">
-                          <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Verdict:</span>
-                          <input 
-                            type="text" 
-                            defaultValue={match.predictions?.whoWillWin || ''}
-                            onBlur={(e) => updateCricketMatchWhoWillWin(match.id, e.target.value)}
-                            className="bg-transparent border-none text-[10px] font-bold text-emerald-500 focus:outline-none w-24"
-                            placeholder="Set winner..."
-                          />
-                        </div>
-                        <div className="flex items-center gap-2 bg-black/40 rounded-lg px-2 py-1">
-                          <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Actual:</span>
-                          <input 
-                            type="text" 
-                            defaultValue={match.actualWinner || ''}
-                            onBlur={async (e) => {
-                              try {
-                                await updateDoc(doc(db, 'cricketMatches', match.id), { actualWinner: e.target.value });
-                                showToast('Actual winner updated');
-                              } catch (err) {
-                                console.error(err);
-                              }
-                            }}
-                            className="bg-transparent border-none text-[10px] font-bold text-blue-500 focus:outline-none w-24"
-                            placeholder="Actual winner..."
-                          />
-                        </div>
-                        <div className="flex bg-black/40 rounded-lg p-1">
-                          <button onClick={async () => {
-                            try {
-                              await updateDoc(doc(db, 'cricketMatches', match.id), { predictionResult: 'win' });
-                              showToast('Prediction marked as WIN');
-                            } catch (err) {
-                              console.error(err);
-                            }
-                          }} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${match.predictionResult === 'win' ? 'bg-emerald-500/20 text-emerald-500' : 'text-white/40 hover:text-white'}`}>Win</button>
-                          <button onClick={async () => {
-                            try {
-                              await updateDoc(doc(db, 'cricketMatches', match.id), { predictionResult: 'loss' });
-                              showToast('Prediction marked as LOSS');
-                            } catch (err) {
-                              console.error(err);
-                            }
-                          }} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${match.predictionResult === 'loss' ? 'bg-red-500/20 text-red-500' : 'text-white/40 hover:text-white'}`}>Loss</button>
-                          <button onClick={async () => {
-                            try {
-                              await updateDoc(doc(db, 'cricketMatches', match.id), { predictionResult: 'pending' });
-                              showToast('Prediction marked as PENDING');
-                            } catch (err) {
-                              console.error(err);
-                            }
-                          }} className={`px-2 py-1 text-[10px] font-bold uppercase rounded ${!match.predictionResult || match.predictionResult === 'pending' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white'}`}>Pending</button>
-                        </div>
-                        <button 
-                          onClick={() => deleteCricketMatch(match.id)}
-                          className="w-8 h-8 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-lg flex items-center justify-center transition-all ml-2"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-white/5">
-                      <div>
-                        <div className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-1">Win Prob</div>
-                        <div className="text-sm text-emerald-400 font-bold">{match.predictions?.winProbability[match.teams[0].name]}% - {match.predictions?.winProbability[match.teams[1].name]}%</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-1">Toss</div>
-                        <div className="text-sm text-white font-bold">{match.predictions?.tossPrediction}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-1">Top Batsman</div>
-                        <div className="text-sm text-white font-bold">{match.predictions?.topBatsman}</div>
-                      </div>
-                      <div>
-                        <div className="text-[10px] text-white/40 uppercase font-black tracking-widest mb-1">Top Bowler</div>
-                        <div className="text-sm text-white font-bold">{match.predictions?.topBowler}</div>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </motion.section>
-        )}
-
         {activeTab === 'accounts' && (
           <motion.section
             key="accounts"
@@ -3272,21 +2398,7 @@ const AdminPanel: React.FC<{
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          console.log('Edit Wallet clicked for user:', u.id);
-                          const newBalanceStr = prompt('Enter new wallet balance for ' + u.email + ' (0 - 100,000,000)', u.walletBalance?.toString() || '0');
-                          if (newBalanceStr !== null) {
-                            const newBalance = Number(newBalanceStr);
-                            if (!isNaN(newBalance) && newBalance >= 0 && newBalance <= 100000000) {
-                              updateDoc(doc(db, 'users', u.id), { walletBalance: newBalance })
-                                .then(() => {
-                                  showToast('Wallet balance updated!');
-                                  logAdminAction('EDIT_WALLET', `Updated balance for ${u.email} to ${newBalance}`);
-                                })
-                                .catch(err => showToast('Error updating balance: ' + err.message));
-                            } else {
-                              showToast('Invalid balance. Please enter a value between 0 and 100,000,000.');
-                            }
-                          }
+                          setUserToEditWallet(u);
                         }}
                         className="flex-1 md:flex-none bg-teal-500/10 hover:bg-teal-600 text-teal-500 hover:text-white px-6 py-3 rounded-xl text-sm font-bold transition-all border border-teal-500/20 flex items-center justify-center gap-2"
                       >
@@ -3296,20 +2408,7 @@ const AdminPanel: React.FC<{
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          console.log('Edit Profile clicked for user:', u.id);
-                          const newName = prompt('Enter new username for ' + u.email, u.name || '');
-                          const newUid = prompt('Enter new UID for ' + u.email, u.uid || '');
-                          if (newName !== null || newUid !== null) {
-                            const updateData: any = {};
-                            if (newName !== null) updateData.name = newName;
-                            if (newUid !== null) updateData.uid = newUid;
-                            updateDoc(doc(db, 'users', u.id), updateData)
-                              .then(() => {
-                                showToast('User profile updated!');
-                                logAdminAction('EDIT_PROFILE', `Updated profile for ${u.email}`);
-                              })
-                              .catch(err => showToast('Error updating profile: ' + err.message));
-                          }
+                          setUserToEditProfile(u);
                         }}
                         className="flex-1 md:flex-none bg-blue-500/10 hover:bg-blue-600 text-blue-500 hover:text-white px-6 py-3 rounded-xl text-sm font-bold transition-all border border-blue-500/20 flex items-center justify-center gap-2"
                       >
@@ -4887,6 +3986,131 @@ const AdminPanel: React.FC<{
           </div>
         )}
       </AnimatePresence>
+
+      {/* Edit User Wallet Modal */}
+      <AnimatePresence>
+        {userToEditWallet && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#151619] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl space-y-6"
+            >
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <Wallet className="text-emerald-500" /> Edit Wallet
+              </h3>
+              <p className="text-xs text-white/40">{userToEditWallet.email}</p>
+              
+              <div>
+                <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">New Balance (0 - 100M)</label>
+                <input 
+                  type="number"
+                  defaultValue={userToEditWallet.walletBalance || 0}
+                  className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50"
+                  id="new-wallet-balance-input-manual"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setUserToEditWallet(null)}
+                  className="flex-1 bg-white/5 text-white font-bold py-3 rounded-xl hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    const input = document.getElementById('new-wallet-balance-input-manual') as HTMLInputElement;
+                    const val = Number(input.value);
+                    if (!isNaN(val) && val >= 0 && val <= 100000000) {
+                      try {
+                        await updateDoc(doc(db, 'users', userToEditWallet.id), { walletBalance: val });
+                        showToast('Wallet balance updated!');
+                        logAdminAction('EDIT_WALLET', `Updated balance for ${userToEditWallet.email} to ${val}`);
+                        setUserToEditWallet(null);
+                      } catch (err) {
+                        showToast('Error updating balance');
+                      }
+                    } else {
+                      showToast('Invalid balance');
+                    }
+                  }}
+                  className="flex-1 bg-emerald-500 text-white font-bold py-3 rounded-xl hover:bg-emerald-600"
+                >
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit User Profile Modal */}
+      <AnimatePresence>
+        {userToEditProfile && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#151619] border border-white/10 rounded-3xl p-8 max-w-sm w-full shadow-2xl space-y-6"
+            >
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <User className="text-blue-500" /> Edit Profile
+              </h3>
+              <p className="text-xs text-white/40">{userToEditProfile.email}</p>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Username</label>
+                  <input 
+                    type="text"
+                    defaultValue={userToEditProfile.name || ''}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500/50"
+                    id="new-profile-name-input-manual"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">UID</label>
+                  <input 
+                    type="text"
+                    defaultValue={userToEditProfile.uid || ''}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500/50"
+                    id="new-profile-uid-input-manual"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setUserToEditProfile(null)}
+                  className="flex-1 bg-white/5 text-white font-bold py-3 rounded-xl hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    const name = (document.getElementById('new-profile-name-input-manual') as HTMLInputElement).value;
+                    const uid = (document.getElementById('new-profile-uid-input-manual') as HTMLInputElement).value;
+                    try {
+                      await updateDoc(doc(db, 'users', userToEditProfile.id), { name, uid });
+                      showToast('Profile updated!');
+                      logAdminAction('EDIT_PROFILE', `Updated profile for ${userToEditProfile.email}`);
+                      setUserToEditProfile(null);
+                    } catch (err) {
+                      showToast('Error updating profile');
+                    }
+                  }}
+                  className="flex-1 bg-blue-500 text-white font-bold py-3 rounded-xl hover:bg-blue-600"
+                >
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -4896,7 +4120,7 @@ const InboxView: React.FC<{ onBack: () => void; onPurchase: () => void }> = ({ o
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hasActiveKey, setHasActiveKey] = useState(false);
+  const [hasActivePlan, setHasActivePlan] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -4920,14 +4144,14 @@ const InboxView: React.FC<{ onBack: () => void; onPurchase: () => void }> = ({ o
       setLoading(false);
     });
 
-    // Check key status for reminders
-    const unsubKey = onSnapshot(doc(db, 'keys', user.uid + "_active"), (doc) => {
-      setHasActiveKey(doc.exists() && doc.data()?.isActive === true);
+    // Check plan status for reminders
+    const unsubPlanStatus = onSnapshot(doc(db, 'plans', user.uid), (doc) => {
+      setHasActivePlan(doc.exists() && doc.data()?.isActive === true);
     }, (err) => {
-      handleFirestoreError(err, OperationType.GET, `keys/${user.uid}_active`);
+      handleFirestoreError(err, OperationType.GET, `plans/${user.uid}`);
     });
 
-    return () => { unsubNotifications(); unsubKey(); };
+    return () => { unsubNotifications(); unsubPlanStatus(); };
   }, [user]);
 
   const markAsRead = async (id: string) => {
@@ -4951,7 +4175,7 @@ const InboxView: React.FC<{ onBack: () => void; onPurchase: () => void }> = ({ o
 
       <div className="space-y-4">
         {/* Dynamic Reminders */}
-        {!hasActiveKey && (
+        {!hasActivePlan && (
           <>
             <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-6 flex flex-col gap-4">
               <div className="flex items-start gap-4">
@@ -4961,7 +4185,7 @@ const InboxView: React.FC<{ onBack: () => void; onPurchase: () => void }> = ({ o
                 <div>
                   <h4 className="font-bold text-slate-900 dark:text-white mb-1">Urgent: Renewal Required</h4>
                   <p className="text-sm text-slate-600 dark:text-white/60 leading-relaxed">
-                    Your access key is missing or has expired. Renew now to continue receiving live predictions.
+                    Your access plan is missing or has expired. Renew now to continue receiving live predictions.
                   </p>
                 </div>
               </div>
@@ -4969,7 +4193,7 @@ const InboxView: React.FC<{ onBack: () => void; onPurchase: () => void }> = ({ o
                 onClick={onPurchase}
                 className="active:scale-95 hover:scale-[1.02] transition-transform w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-orange-900/20"
               >
-                Renew Key Now
+                Renew Plan Now
               </button>
             </div>
             <div className="bg-blue-500/5 border border-blue-500/10 rounded-2xl p-4 flex items-center gap-4">
@@ -4986,7 +4210,7 @@ const InboxView: React.FC<{ onBack: () => void; onPurchase: () => void }> = ({ o
         {/* System Notifications */}
         {loading ? (
           <div className="flex justify-center py-12"><Clock className="animate-spin text-slate-400 dark:text-white/20" size={32} /></div>
-        ) : notifications.length === 0 && hasActiveKey ? (
+        ) : notifications.length === 0 && hasActivePlan ? (
           <div className="text-center py-12 bg-white dark:bg-white/5 rounded-3xl border border-dashed border-slate-200 dark:border-white/10 shadow-sm">
             <Bell className="text-slate-200 dark:text-white/10 mx-auto mb-4" size={48} />
             <p className="text-slate-400 dark:text-white/30">Your inbox is empty.</p>
@@ -5144,10 +4368,10 @@ const Wingo30sView: React.FC<{ onBack: () => void; hasAccess: boolean; onPurchas
       <div className="text-center py-12 bg-red-500/5 rounded-3xl border border-red-500/20 shadow-sm">
         <XCircle className="text-red-600 dark:text-red-500 mx-auto mb-4" size={48} />
         <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h3>
-        <p className="text-slate-600 dark:text-white/50 max-w-xs mx-auto mb-6">You need an active key to view live predictions.</p>
+        <p className="text-slate-600 dark:text-white/50 max-w-xs mx-auto mb-6">You need an active plan to view live predictions.</p>
         <div className="flex justify-center gap-4">
           <button onClick={onBack} className="active:scale-95 hover:scale-[1.02] transition-transform bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-900 dark:text-white px-6 py-2 rounded-xl transition-all border border-slate-200 dark:border-white/10 shadow-sm">Back to Home</button>
-          <button onClick={onPurchase} className="active:scale-95 hover:scale-[1.02] transition-transform bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-xl transition-all shadow-sm font-bold">Purchase Key</button>
+          <button onClick={onPurchase} className="active:scale-95 hover:scale-[1.02] transition-transform bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-xl transition-all shadow-sm font-bold">Purchase Plan</button>
         </div>
       </div>
     );
@@ -5336,42 +4560,57 @@ const Wingo30sView: React.FC<{ onBack: () => void; hasAccess: boolean; onPurchas
 
 // --- Wingo 3Min Component ---
 // --- Wingo Selection View ---
-const WingoSelectionView: React.FC<{ onBack: () => void; onSelect: (mode: 'master' | 'predictions') => void; wingo: string }> = ({ onBack, onSelect, wingo }) => {
+const WingoSelectionView: React.FC<{ onBack: () => void; onSelect: (mode: 'master' | 'predictions') => void; wingo: string, isAdmin: boolean }> = ({ onBack, onSelect, wingo, isAdmin }) => {
   return (
     <div className="max-w-md mx-auto space-y-4">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-tight">
-          Wingo {wingo}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2 uppercase tracking-tighter">
+          WinGo {wingo}
         </h2>
-        <button onClick={onBack} className="text-slate-400 dark:text-white/40 hover:text-slate-900 dark:hover:text-white transition-colors">
+        <button onClick={onBack} className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-white/5 rounded-2xl text-slate-400 dark:text-white/40 hover:text-slate-900 dark:hover:text-white transition-colors">
           <ChevronLeft size={20} />
         </button>
       </div>
 
       <div className="grid grid-cols-1 gap-4">
         <button 
-          onClick={() => onSelect('master')}
-          className="p-8 rounded-3xl bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 flex flex-col items-center gap-4 group hover:border-indigo-500/50 transition-all shadow-sm"
+          onClick={() => {
+            if (isAdmin) {
+              onSelect('master');
+            }
+          }}
+          className={`p-8 rounded-[2.5rem] border flex flex-col items-center gap-4 group transition-all shadow-sm relative overflow-hidden ${
+            isAdmin 
+              ? 'bg-white dark:bg-[#151619] border-slate-200 dark:border-white/10 hover:border-emerald-500/50' 
+              : 'bg-slate-100 dark:bg-white/5 border-transparent cursor-not-allowed grayscale opacity-80'
+          }`}
         >
-          <div className="p-4 rounded-2xl bg-indigo-500/10 text-indigo-500 group-hover:scale-110 transition-transform">
+          {!isAdmin && (
+            <div className="absolute top-4 right-4 bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full z-10">
+              Coming Soon
+            </div>
+          )}
+          <div className={`p-4 rounded-3xl group-hover:scale-110 transition-transform ${
+            isAdmin ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-200 dark:bg-white/10 text-slate-400'
+          }`}>
             <Target size={32} />
           </div>
           <div className="text-center">
-            <span className="block font-black text-lg text-slate-900 dark:text-white uppercase tracking-widest">Master Plan</span>
-            <span className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest font-bold">Strategy & Steps</span>
+            <span className="block font-black text-xl text-slate-900 dark:text-white uppercase tracking-tight">Master Plan</span>
+            <span className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest font-bold">Neural Recovery Strategy</span>
           </div>
         </button>
 
         <button 
           onClick={() => onSelect('predictions')}
-          className="p-8 rounded-3xl bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 flex flex-col items-center gap-4 group hover:border-emerald-500/50 transition-all shadow-sm"
+          className="p-8 rounded-[2.5rem] bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 flex flex-col items-center gap-4 group hover:border-emerald-500/50 transition-all shadow-sm"
         >
-          <div className="p-4 rounded-2xl bg-emerald-500/10 text-emerald-500 group-hover:scale-110 transition-transform">
+          <div className="p-4 rounded-3xl bg-emerald-500 text-white group-hover:scale-110 transition-transform shadow-lg shadow-emerald-500/20">
             <Zap size={32} />
           </div>
           <div className="text-center">
-            <span className="block font-black text-lg text-slate-900 dark:text-white uppercase tracking-widest">Predictions</span>
-            <span className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest font-bold">Live AI Analysis</span>
+            <span className="block font-black text-xl text-slate-900 dark:text-white uppercase tracking-tight">Predictions</span>
+            <span className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest font-bold">Neural Live Analysis</span>
           </div>
         </button>
       </div>
@@ -5499,10 +4738,10 @@ const Wingo3MinView: React.FC<{ onBack: () => void; hasAccess: boolean; onPurcha
       <div className="text-center py-12 bg-red-500/5 rounded-3xl border border-red-500/20 shadow-sm">
         <XCircle className="text-red-600 dark:text-red-500 mx-auto mb-4" size={48} />
         <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h3>
-        <p className="text-slate-600 dark:text-white/50 max-w-xs mx-auto mb-6">You need an active key to view live predictions.</p>
+        <p className="text-slate-600 dark:text-white/50 max-w-xs mx-auto mb-6">You need an active plan to view live predictions.</p>
         <div className="flex justify-center gap-4">
           <button onClick={onBack} className="active:scale-95 hover:scale-[1.02] transition-transform bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-900 dark:text-white px-6 py-2 rounded-xl transition-all border border-slate-200 dark:border-white/10 shadow-sm">Back to Home</button>
-          <button onClick={onPurchase} className="active:scale-95 hover:scale-[1.02] transition-transform bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-xl transition-all shadow-sm font-bold">Purchase Key</button>
+          <button onClick={onPurchase} className="active:scale-95 hover:scale-[1.02] transition-transform bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-xl transition-all shadow-sm font-bold">Purchase Plan</button>
         </div>
       </div>
     );
@@ -5805,10 +5044,10 @@ const Wingo5MinView: React.FC<{ onBack: () => void; hasAccess: boolean; onPurcha
       <div className="text-center py-12 bg-red-500/5 rounded-3xl border border-red-500/20 shadow-sm">
         <XCircle className="text-red-600 dark:text-red-500 mx-auto mb-4" size={48} />
         <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h3>
-        <p className="text-slate-600 dark:text-white/50 max-w-xs mx-auto mb-6">You need an active key to view live predictions.</p>
+        <p className="text-slate-600 dark:text-white/50 max-w-xs mx-auto mb-6">You need an active plan to view live predictions.</p>
         <div className="flex justify-center gap-4">
           <button onClick={onBack} className="active:scale-95 hover:scale-[1.02] transition-transform bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-900 dark:text-white px-6 py-2 rounded-xl transition-all border border-slate-200 dark:border-white/10 shadow-sm">Back to Home</button>
-          <button onClick={onPurchase} className="active:scale-95 hover:scale-[1.02] transition-transform bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-xl transition-all shadow-sm font-bold">Purchase Key</button>
+          <button onClick={onPurchase} className="active:scale-95 hover:scale-[1.02] transition-transform bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-xl transition-all shadow-sm font-bold">Purchase Plan</button>
         </div>
       </div>
     );
@@ -6126,10 +5365,10 @@ const Wingo1MinView: React.FC<{ onBack: () => void; hasAccess: boolean; onPurcha
       <div className="text-center py-12 bg-red-500/5 rounded-3xl border border-red-500/20 shadow-sm">
         <XCircle className="text-red-600 dark:text-red-500 mx-auto mb-4" size={48} />
         <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h3>
-        <p className="text-slate-600 dark:text-white/50 max-w-xs mx-auto mb-6">You need an active key to view live predictions.</p>
+        <p className="text-slate-600 dark:text-white/50 max-w-xs mx-auto mb-6">You need an active plan to view live predictions.</p>
         <div className="flex justify-center gap-4">
           <button onClick={onBack} className="active:scale-95 hover:scale-[1.02] transition-transform bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-900 dark:text-white px-6 py-2 rounded-xl transition-all border border-slate-200 dark:border-white/10 shadow-sm">Back to Home</button>
-          <button onClick={onPurchase} className="active:scale-95 hover:scale-[1.02] transition-transform bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-xl transition-all shadow-sm font-bold">Purchase Key</button>
+          <button onClick={onPurchase} className="active:scale-95 hover:scale-[1.02] transition-transform bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-xl transition-all shadow-sm font-bold">Purchase Plan</button>
         </div>
       </div>
     );
@@ -6333,11 +5572,12 @@ const ProfileView: React.FC<{
   onShowResetModal: () => void; 
   pendingResetDay?: number; 
   onGiveFeedback: () => void;
+  onShowFAQ: () => void;
   onPurchase: () => void;
   soundEnabled: boolean;
   toggleSound: () => void;
   showToast: (msg: string) => void;
-}> = ({ onBack, onShowResetModal, pendingResetDay, onGiveFeedback, onPurchase, soundEnabled, toggleSound, showToast }) => {
+}> = ({ onBack, onShowResetModal, pendingResetDay, onGiveFeedback, onShowFAQ, onPurchase, soundEnabled, toggleSound, showToast }) => {
   const { profile } = useAuth();
   const { activePlan, loading: planLoading } = usePlan();
   const { theme, toggleTheme } = useTheme();
@@ -6436,71 +5676,38 @@ const ProfileView: React.FC<{
                 <option value="ta">தமிழ் (Tamil)</option>
               </select>
             </div>
-
-            <button
-              onClick={toggleTheme}
-              className="w-full bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-900 dark:text-white text-sm font-bold py-4 rounded-2xl transition-all border border-slate-200 dark:border-white/10 flex items-center justify-between px-6"
-            >
-              <div className="flex items-center gap-3">
-                {theme === 'dark' ? <Sun size={18} className="text-amber-500" /> : <Moon size={18} className="text-indigo-500" />}
-                <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-              </div>
-              <div className="w-10 h-6 bg-indigo-500/20 rounded-full relative">
-                <div className={`w-4 h-4 bg-indigo-500 rounded-full absolute top-1 transition-all ${theme === 'dark' ? 'left-5' : 'left-1'}`} />
-              </div>
-            </button>
-
-            <button
-              onClick={() => {
-                if ('Notification' in window) {
-                  window.Notification.requestPermission().then(permission => {
-                    if (permission === 'granted') {
-                      showToast('Push notifications enabled!');
-                    }
-                  });
-                } else {
-                  showToast('Push notifications are not supported in this browser.');
-                }
-              }}
-              className="w-full bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-900 dark:text-white text-sm font-bold py-4 rounded-2xl transition-all border border-slate-200 dark:border-white/10 flex items-center justify-between px-6"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-pink-500 text-lg">🔔</span>
-                <span>Push Notifications</span>
-              </div>
-              <div className="text-xs font-bold text-indigo-500">Enable</div>
-            </button>
-
-            <button
-              onClick={toggleSound}
-              className="w-full bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-900 dark:text-white text-sm font-bold py-4 rounded-2xl transition-all border border-slate-200 dark:border-white/10 flex items-center justify-between px-6"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-indigo-500">🎵</span>
-                <span>Sound Effects</span>
-              </div>
-              <div className={`w-10 h-6 rounded-full relative transition-colors ${soundEnabled ? 'bg-emerald-500/20' : 'bg-slate-300 dark:bg-white/10'}`}>
-                <div className={`w-4 h-4 rounded-full absolute top-1 transition-all ${soundEnabled ? 'bg-emerald-500 left-5' : 'bg-slate-400 dark:bg-white/40 left-1'}`} />
-              </div>
-            </button>
           </div>
         </div>
 
         <div className="pt-6 border-t border-slate-100 dark:border-white/5">
-          <p className="text-[10px] text-slate-400 dark:text-white/20 uppercase tracking-widest font-bold mb-3">Feedback</p>
-          <button
-            onClick={onGiveFeedback}
-            className="w-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-500 text-sm font-bold py-4 rounded-2xl transition-all border border-emerald-500/20 flex items-center justify-center gap-2"
-          >
-            <MessageSquare size={18} /> Give Feedback
-          </button>
+          <p className="text-[10px] text-slate-400 dark:text-white/20 uppercase tracking-widest font-bold mb-3">Support</p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={onShowFAQ}
+              className="flex flex-col items-center gap-2 p-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl hover:border-emerald-500/30 transition-all group"
+            >
+              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-500 group-hover:scale-110 transition-transform">
+                <HelpCircle size={20} />
+              </div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white">FAQ</span>
+            </button>
+            <button
+              onClick={onGiveFeedback}
+              className="flex flex-col items-center gap-2 p-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl hover:border-emerald-500/30 transition-all group"
+            >
+              <div className="p-2 rounded-xl bg-indigo-500/10 text-indigo-500 group-hover:scale-110 transition-transform">
+                <MessageSquare size={20} />
+              </div>
+              <span className="text-xs font-bold text-slate-900 dark:text-white">Feedback</span>
+            </button>
+          </div>
         </div>
 
         <div className="pt-6 border-t border-slate-100 dark:border-white/5">
           <p className="text-[10px] text-slate-400 dark:text-white/20 uppercase tracking-widest font-bold mb-3">About</p>
           <div className="bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/10 rounded-2xl p-6">
             <p className="text-xs text-slate-600 dark:text-white/60 leading-relaxed">
-              PredictKey Pro is a professional prediction tool designed to help you analyze trends and make informed decisions.
+              AI Predictor Pro is a professional prediction tool designed to help you analyze trends and make informed decisions.
             </p>
           </div>
         </div>
@@ -6528,7 +5735,7 @@ const ProfileView: React.FC<{
             </p>
             <div className="grid grid-cols-1 gap-2">
               <a 
-                href="https://t.me/PredictKeyHelpBot"
+                href="https://t.me/PredictorHelpBot"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-3 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-sm font-bold py-3 rounded-xl transition-all border border-blue-500/20"
@@ -6972,7 +6179,7 @@ const WingoStrategyView: React.FC<{
       <div className="text-center py-12 bg-red-500/5 rounded-3xl border border-red-500/20 shadow-sm">
         <XCircle className="text-red-600 dark:text-red-500 mx-auto mb-4" size={48} />
         <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Access Denied</h3>
-        <p className="text-slate-600 dark:text-white/50 max-w-xs mx-auto mb-6">You need an active key to view the Master Plan.</p>
+        <p className="text-slate-600 dark:text-white/50 max-w-xs mx-auto mb-6">You need an active plan to view the Master Plan.</p>
         <div className="flex justify-center gap-4 mt-8">
           <button onClick={onBack} className="active:scale-95 hover:scale-[1.02] transition-transform bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-900 dark:text-white px-6 py-2 rounded-xl transition-all border border-slate-200 dark:border-white/10 shadow-sm">Back to Home</button>
           {planState?.pendingResetDay ? (
@@ -7554,7 +6761,7 @@ const ColorGameSelectionView: React.FC<{ onSelect: (wingo: '30s' | '1min' | '3mi
 };
 
 // --- Main Dashboard ---
-type ViewState = 'home' | 'color_prediction' | 'purchase' | 'admin' | 'history' | 'profile' | 'inbox' | 'feedback' | 'referral' | 'wallet' | 'leaderboard' | 'achievements' | 'vip' | 'giveaway' | 'spin' | 'rewards' | 'staking' | 'analytics_user' | 'support' | 'wingo_selection' | 'wingo_master' | 'wingo_predictions' | 'aviator' | 'cricket' | 'stock' | 'color_game_selection' | 'game_settings';
+type ViewState = 'home' | 'color_prediction' | 'purchase' | 'admin' | 'history' | 'profile' | 'inbox' | 'feedback' | 'referral' | 'wallet' | 'leaderboard' | 'achievements' | 'vip' | 'giveaway' | 'spin' | 'rewards' | 'staking' | 'analytics_user' | 'support' | 'wingo_selection' | 'wingo_master' | 'wingo_predictions' | 'aviator' | 'color_game_selection' | 'game_settings' | 'faq';
 
 export const Dashboard: React.FC = () => {
   const { profile, isAdmin } = useAuth();
@@ -7569,51 +6776,14 @@ export const Dashboard: React.FC = () => {
   const [resetTargetDay, setResetTargetDay] = useState<number>(1);
   const [resetStatus, setResetStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [cricketMatches, setCricketMatches] = useState<CricketMatch[]>([]);
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('soundEnabled');
-      return saved !== null ? JSON.parse(saved) : true;
-    } catch (err) {
-      console.error('LocalStorage error:', err);
-      return true;
-    }
-  });
+  const [soundEnabled, setSoundEnabled] = useState(true);
 
-  const toggleSound = () => {
-    setSoundEnabled((prev: boolean) => {
-      const next = !prev;
-      try {
-        localStorage.setItem('soundEnabled', JSON.stringify(next));
-      } catch (err) {
-        console.error('LocalStorage error:', err);
-      }
-      return next;
-    });
-  };
+  const toggleSound = () => setSoundEnabled(!soundEnabled);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
-
-  useEffect(() => {
-    const qCricket = query(collection(db, 'cricketMatches'), orderBy('time', 'asc'));
-    const unsubCricket = onSnapshot(qCricket, (snapshot) => {
-      const matchesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        time: doc.data().time?.toDate ? doc.data().time.toDate() : new Date(doc.data().time || Date.now())
-      })) as CricketMatch[];
-      setCricketMatches(matchesData);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.GET, 'cricketMatches');
-    });
-
-    return () => {
-      unsubCricket();
-    };
-  }, []);
 
   useEffect(() => {
     if (!profile) return;
@@ -7690,181 +6860,268 @@ export const Dashboard: React.FC = () => {
 
   const bottomNavItems = [
     { id: 'home', label: 'Home', icon: LayoutDashboard },
-    { id: 'color_game_selection', label: 'Color', icon: Palette },
+    { id: 'color_game_selection', label: 'WinGo', icon: Palette },
     { id: 'wallet', label: 'Wallet', icon: Wallet },
     { id: 'profile', label: 'Profile', icon: User },
   ];
 
   const wingoItems = [
-    { id: 'wingo30s', label: 'Wingo 30s', icon: Clock, color: 'text-blue-500', wingo: '30s' as const },
-    { id: 'wingo1min', label: 'Only Wingo 1Min', icon: TrendingUp, color: 'text-emerald-500', wingo: '1min' as const },
-    { id: 'wingo3min', label: 'Wingo 3Min', icon: Zap, color: 'text-orange-500', wingo: '3min' as const },
-    { id: 'wingo5min', label: 'Wingo 5Min', icon: Activity, color: 'text-red-500', wingo: '5min' as const },
+    { id: 'wingo30s', label: 'WinGo 30s', icon: Clock, color: 'text-blue-500', wingo: '30s' as const },
+    { id: 'wingo1min', label: 'WinGo 1Min', icon: TrendingUp, color: 'text-emerald-500', wingo: '1min' as const },
+    { id: 'wingo3min', label: 'WinGo 3Min', icon: Zap, color: 'text-orange-500', wingo: '3min' as const },
+    { id: 'wingo5min', label: 'WinGo 5Min', icon: Activity, color: 'text-red-500', wingo: '5min' as const },
   ];
 
   const otherItems = [
-    { id: 'wallet', label: 'Wallet', icon: Wallet, color: 'text-emerald-500' },
-    { id: 'vip', label: 'VIP System', icon: Award, color: 'text-yellow-400' },
-    { id: 'giveaway', label: 'Giveaway', icon: Trophy, color: 'text-pink-500' },
-    { id: 'spin', label: 'Spin & Win', icon: RefreshCw, color: 'text-purple-500' },
-    { id: 'rewards', label: 'My Rewards', icon: Gift, color: 'text-pink-500' },
-    { id: 'staking', label: 'Staking Vaults', icon: ShieldCheck, color: 'text-teal-500' },
-    { id: 'analytics_user', label: 'Analytics', icon: TrendingUp, color: 'text-blue-500' },
-    { id: 'support', label: 'AI Support', icon: MessageSquare, color: 'text-orange-500' },
-    { id: 'purchase', label: 'Purchase', icon: CreditCard, color: 'text-purple-500' },
-    { id: 'inbox', label: 'Inbox', icon: Bell, color: 'text-pink-500', badge: unreadCount > 0 ? unreadCount : undefined },
-    { id: 'history', label: 'History', icon: Clock, color: 'text-yellow-500' },
-    { id: 'referral', label: 'Refer & Earn', icon: Users, color: 'text-blue-500' },
-    { id: 'leaderboard', label: 'Leaderboard', icon: Trophy, color: 'text-amber-500' },
-    { id: 'achievements', label: 'Achievements', icon: Award, color: 'text-indigo-400' },
+    { id: 'wallet', label: 'Wallet', icon: Wallet, color: 'text-emerald-500', desc: 'Secure funds' },
+    { id: 'vip', label: 'VIP System', icon: Award, color: 'text-yellow-400', desc: 'Member benefits' },
+    { id: 'giveaway', label: 'Giveaway', icon: Trophy, color: 'text-pink-500', desc: 'Join pools' },
+    { id: 'spin', label: 'Spin & Win', icon: RefreshCw, color: 'text-purple-500', desc: 'Daily luck' },
+    { id: 'rewards', label: 'Rewards', icon: Gift, color: 'text-pink-500', desc: 'Claim prizes' },
+    { id: 'staking', label: 'Staking', icon: ShieldCheck, color: 'text-teal-500', desc: 'Earn passive' },
+    { id: 'analytics_user', label: 'Analytics', icon: TrendingUp, color: 'text-blue-500', desc: 'View stats' },
+    { id: 'purchase', label: 'Activation', icon: ShoppingBag, color: 'text-purple-500', desc: 'Get access' },
+    { id: 'referral', label: 'Referral', icon: Users, color: 'text-blue-500', desc: 'Earn credits' },
+    { id: 'leaderboard', label: 'Leaderboard', icon: Trophy, color: 'text-amber-500', desc: 'Top winners' },
+    { id: 'history', label: 'History', icon: Clock, color: 'text-yellow-500', desc: 'Logs' },
+    { id: 'achievements', label: 'Achievements', icon: Award, color: 'text-indigo-400', desc: 'Badges' },
     ...(isAdmin ? [
-      { id: 'admin', label: 'Admin Panel', icon: ShieldCheck, color: 'text-orange-500', adminOnly: true },
-      { id: 'game_settings', label: 'Game Settings', icon: Wrench, color: 'text-rose-500', adminOnly: true }
+      { id: 'admin', label: 'Admin', icon: ShieldCheck, color: 'text-orange-500', adminOnly: true, desc: 'Manage' },
+      { id: 'game_settings', label: 'Settings', icon: Wrench, color: 'text-rose-500', adminOnly: true, desc: 'Config' }
     ] : [])
   ];
 
-  const HomeView: React.FC = () => (
-    <div className="space-y-8 pb-20">
-      {/* Hero Section */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-emerald-600 to-teal-700 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-emerald-500/20">
-        <div className="relative z-10">
-          <h1 className="text-4xl font-black mb-2 tracking-tight uppercase">AI PREDICTOR</h1>
-          <p className="text-emerald-100 text-sm font-medium max-w-[200px] leading-relaxed">Advanced artificial intelligence for high-accuracy gaming predictions.</p>
-          <button 
-            onClick={() => navigateTo('color_game_selection')}
-            className="mt-6 bg-white text-emerald-700 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-50 shadow-lg transition-all active:scale-95"
-          >
-            Start Predicting
-          </button>
+  const HomeView: React.FC = () => {
+    const daysRemaining = activePlan ? differenceInDays(new Date(activePlan.expiresAt), new Date()) : 0;
+    
+    return (
+      <div className="space-y-8 pb-24">
+        {/* Hero Section */}
+        <div className="relative overflow-hidden bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-emerald-500/30">
+          <div className="relative z-10 flex items-center justify-between">
+            <div className="space-y-4 max-w-[60%]">
+              <div className="inline-flex items-center gap-2 bg-white/10 px-3 py-1 rounded-full border border-white/20">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-100">AI Active Now</span>
+              </div>
+              <div className="space-y-1">
+                <h1 className="text-4xl font-black tracking-tight uppercase leading-none">AI PREDICTOR</h1>
+                <p className="text-emerald-100/70 text-xs font-medium leading-relaxed">Experience a new era of accuracy with our neural match insights.</p>
+              </div>
+              <button 
+                onClick={() => navigateTo('color_game_selection')}
+                className="bg-white text-emerald-700 px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-50 shadow-xl transition-all active:scale-95 flex items-center gap-2 group"
+              >
+                Start Predicting <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
+            <div className="relative">
+              <div className="absolute inset-0 bg-emerald-400/20 blur-[60px] rounded-full" />
+              <div className="relative bg-white/10 backdrop-blur-md p-4 rounded-3xl border border-white/20">
+                <Bot size={64} className="text-white drop-shadow-2xl" />
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="absolute top-[-20%] right-[-10%] opacity-10 rotate-12">
-          <ShieldCheck size={240} />
+
+        {/* Plan Status Card */}
+        {activePlan ? (
+          <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2.5rem] p-6 shadow-sm overflow-hidden relative group">
+            <div className="absolute top-0 right-0 p-4">
+              <div className="bg-emerald-500/10 text-emerald-500 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter">Active Plan</div>
+            </div>
+            <div className="flex items-center gap-6">
+              <div className="w-16 h-16 bg-emerald-500/10 rounded-[1.5rem] flex items-center justify-center text-emerald-500">
+                <Star size={32} />
+              </div>
+              <div className="flex-1 space-y-1">
+                <h4 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{activePlan.name} Plan</h4>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">{daysRemaining} Days Left</span>
+                  <span className="text-slate-200 dark:text-white/10">•</span>
+                  <span className="text-[10px] font-bold text-slate-400 dark:text-white/30 uppercase tracking-widest">Expires: {new Date(activePlan.expiresAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+              <button 
+                onClick={() => navigateTo('purchase')}
+                className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg"
+              >
+                Renew Plan
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2.5rem] p-8 text-center space-y-4">
+            <div className="w-16 h-16 bg-red-500/10 rounded-[1.5rem] flex items-center justify-center text-red-500 mx-auto">
+              <AlertTriangle size={32} />
+            </div>
+            <div className="space-y-1">
+              <h4 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">No Active Plan</h4>
+              <p className="text-xs text-slate-500 dark:text-white/40 font-medium">Please subscribe to a plan to start receiving match predictions.</p>
+            </div>
+            <button 
+              onClick={() => navigateTo('purchase')}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95"
+            >
+              Choose Plan
+            </button>
+          </div>
+        )}
+
+        {/* Accuracy Section */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 text-center space-y-2">
+          <p className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest">Today's Accuracy</p>
+          <div className="text-3xl font-black text-emerald-500 tracking-tighter">94.2%</div>
+          <div className="w-full h-1 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
+            <div className="w-[94%] h-full bg-emerald-500 rounded-full" />
+          </div>
+        </div>
+        <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 text-center space-y-2">
+          <p className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest">Wallet Balance</p>
+          <div className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">₹{profile?.walletBalance.toLocaleString() || '0'}</div>
+          <button onClick={() => navigateTo('wallet')} className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center justify-center gap-1">Topup <ArrowUpRight size={10} /></button>
         </div>
       </div>
 
-      {/* Main Games Grid */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between px-2">
-          <h3 className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Main Games</h3>
+      {/* Trending & Bonus Section */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-orange-500/10 flex items-center justify-center text-orange-500">
+              <TrendingUp size={14} />
+            </div>
+            <p className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest">Trending</p>
+          </div>
+          <div className="space-y-1">
+            <div className="text-sm font-black text-slate-900 dark:text-white uppercase">Big Series</div>
+            <p className="text-[9px] text-emerald-500 font-black uppercase tracking-widest">78% Prob. Match</p>
+          </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <button 
-            onClick={() => navigateTo('color_game_selection')}
-            className="group relative overflow-hidden bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 text-left transition-all hover:border-emerald-500/50 hover:shadow-xl hover:shadow-emerald-500/5"
-          >
-            <div className="relative z-10 space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
-                <Palette size={24} />
-              </div>
-              <div>
-                <span className="block font-black text-lg text-slate-900 dark:text-white uppercase tracking-tight">Color Prediction</span>
-                <span className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest font-bold">Wingo Games</span>
-              </div>
+        <button 
+          onClick={() => navigateTo('wallet')} // Daily bonus is often in wallet, or I can add a specific action
+          className="group bg-gradient-to-br from-emerald-500 to-teal-600 rounded-[2rem] p-6 transition-all hover:shadow-lg active:scale-95 text-left relative overflow-hidden"
+        >
+          <div className="relative z-10 space-y-1">
+            <p className="text-white/60 text-[10px] font-black uppercase tracking-widest">Daily Bonus</p>
+            <div className="text-lg font-black text-white uppercase">Claim ₹10</div>
+            <div className="flex items-center gap-1 text-[9px] text-white/40 font-bold uppercase tracking-widest group-hover:text-white/80 transition-colors">
+              Available Now <ArrowUpRight size={10} />
             </div>
-          </button>
-
-          <button 
-            onClick={() => navigateTo('cricket')}
-            className="group relative overflow-hidden bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 text-left transition-all hover:border-emerald-500/50 hover:shadow-xl hover:shadow-emerald-500/5"
-          >
-            <div className="relative z-10 space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
-                <Trophy size={24} />
-              </div>
-              <div>
-                <span className="block font-black text-lg text-slate-900 dark:text-white uppercase tracking-tight">Cricket Prediction</span>
-                <span className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest font-bold">AI Match Insights</span>
-              </div>
-            </div>
-          </button>
-
-          <button 
-            onClick={() => navigateTo('stock')}
-            className="group relative overflow-hidden bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 text-left transition-all hover:border-emerald-500/50 hover:shadow-xl hover:shadow-emerald-500/5"
-          >
-            <div className="relative z-10 space-y-4">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
-                <BarChart2 size={24} />
-              </div>
-              <div>
-                <span className="block font-black text-lg text-slate-900 dark:text-white uppercase tracking-tight">Stock Prediction</span>
-                <span className="text-[10px] text-slate-400 dark:text-white/30 uppercase tracking-widest font-bold">Long-Term Insights</span>
-              </div>
-            </div>
-          </button>
-        </div>
+          </div>
+          <Gift className="absolute -right-2 -bottom-2 text-white/10 w-16 h-16" />
+        </button>
       </div>
 
-      {/* Other Features */}
+      {/* Main Predictions */}
       <div className="space-y-4">
         <div className="flex items-center justify-between px-2">
-          <h3 className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Features & Tools</h3>
+          <h3 className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Featured Predictions</h3>
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20">
+            <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Live Now</span>
+          </div>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          {otherItems.filter(item => !item.adminOnly || isAdmin).map((item) => (
+        <button 
+          onClick={() => navigateTo('color_game_selection')}
+          className="w-full group relative overflow-hidden bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2.5rem] p-8 text-left transition-all hover:border-emerald-500/50 hover:shadow-2xl hover:shadow-emerald-500/5 flex items-center justify-between"
+        >
+          <div className="relative z-10 flex items-center gap-6">
+            <div className="w-16 h-16 rounded-[1.5rem] bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
+              <Palette size={32} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="block font-black text-xl text-slate-900 dark:text-white uppercase tracking-tight">Color Prediction</span>
+                <Sparkles size={16} className="text-amber-500 animate-pulse" />
+              </div>
+              <p className="text-xs text-slate-500 dark:text-white/30 font-medium">Real-time WinGo neural pattern matching.</p>
+            </div>
+          </div>
+          <div className="w-12 h-12 rounded-full border border-slate-100 dark:border-white/5 flex items-center justify-center text-slate-400 group-hover:text-emerald-500 group-hover:bg-emerald-500/10 transition-all">
+            <ChevronRight size={24} />
+          </div>
+        </button>
+      </div>
+
+      {/* Features Grid */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Ecosystem Features</h3>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          {otherItems.filter(item => !item.adminOnly || isAdmin).slice(0, 10).map((item) => (
             <button
               key={item.id}
               onClick={() => navigateTo(item.id as any)}
-              className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-4 flex flex-col items-center gap-2 transition-all hover:border-slate-400 dark:hover:border-white/30 active:scale-95"
+              className="group bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-5 flex flex-col items-start gap-4 transition-all hover:border-emerald-500/50 hover:shadow-lg active:scale-95 text-left"
             >
-              <div className={`p-2 rounded-xl bg-slate-100 dark:bg-white/5 ${item.color}`}>
-                <item.icon size={18} />
+              <div className={`w-10 h-10 rounded-2xl bg-white/5 dark:bg-white/5 flex items-center justify-center ${item.color} group-hover:scale-110 transition-transform`}>
+                <item.icon size={20} />
               </div>
-              <span className="text-[9px] font-bold text-slate-600 dark:text-white/50 uppercase tracking-tight text-center">{item.label}</span>
+              <div>
+                <span className="block text-[13px] font-black text-slate-900 dark:text-white uppercase tracking-tight mb-1">{item.label}</span>
+                <p className="text-[9px] font-bold text-slate-400 dark:text-white/20 uppercase tracking-widest">{item.desc}</p>
+              </div>
             </button>
           ))}
         </div>
       </div>
+
+      {/* Recent Activity */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between px-2">
+          <h3 className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Recent Viral Results</h3>
+        </div>
+        <div className="bg-[#151619] border border-white/5 rounded-[2.5rem] p-6 divide-y divide-white/5">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="py-4 flex items-center justify-between first:pt-0 last:pb-0">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                <div>
+                  <p className="text-xs font-black text-white uppercase tracking-tight">Period #{(928 + i)} Result</p>
+                  <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest">Matched neural pattern "Big"</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs font-black text-emerald-500 uppercase">Success</div>
+                <div className="text-[9px] text-white/20 font-bold uppercase tracking-widest">2m ago</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Responsible Gaming */}
+      <div className="bg-slate-100 dark:bg-white/5 p-8 rounded-[2.5rem] border border-slate-200 dark:border-white/10 text-center space-y-4">
+        <ShieldCheck className="mx-auto text-slate-400 dark:text-white/20" size={32} />
+        <div className="space-y-1">
+          <p className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Responsible Gaming</p>
+          <p className="text-[9px] text-slate-400 dark:text-white/20 font-medium leading-relaxed max-w-[240px] mx-auto italic">AI predictions are for entertainment matches only. Use analysis responsibly and at your own risk.</p>
+        </div>
+      </div>
     </div>
   );
+};
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#0a0a0a] text-slate-900 dark:text-white transition-colors duration-500">
-      <header className="border-b border-slate-200 dark:border-white/5 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl sticky top-0 z-50 transition-colors duration-500">
-        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigateTo('home')}>
-            <div className="w-8 h-8 bg-emerald-500 text-white rounded-xl flex items-center justify-center font-black italic text-sm shadow-lg shadow-emerald-500/20">P</div>
-            <span className="font-black tracking-tighter text-xl uppercase text-slate-900 dark:text-white italic">PredictKey</span>
+      <header className="fixed top-0 left-0 right-0 h-20 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-2xl border-b border-slate-200 dark:border-white/5 z-50 transition-all">
+        <div className="max-w-4xl mx-auto px-6 h-full flex items-center justify-between">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigateTo('home')}>
+            <div className="w-10 h-10 bg-emerald-500 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <Sparkles size={20} className="animate-pulse" />
+            </div>
+            <div>
+              <span className="block font-black tracking-tighter text-lg uppercase text-slate-900 dark:text-white italic">AI Predictor</span>
+              <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest text-center">Neural Output</span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <AnimatePresence>
-              {view !== 'home' && (
-                <motion.button 
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  onClick={() => {
-                    if (view === 'wingo_master' || view === 'wingo_predictions') {
-                      setView('wingo_selection');
-                    } else if (view === 'wingo_selection') {
-                      setView('home');
-                    } else {
-                      navigateTo('home');
-                    }
-                  }}
-                  className="flex items-center gap-2 bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-white/60 px-3 py-2 rounded-xl transition-all text-xs font-bold border border-slate-200 dark:border-white/10"
-                >
-                  <ChevronLeft size={14} /> Back
-                </motion.button>
-              )}
-            </AnimatePresence>
-
-            <button 
-              onClick={() => navigateTo('inbox')}
-              className="relative p-2 text-slate-400 dark:text-white/40 hover:text-slate-900 dark:hover:text-white transition-colors"
-            >
-              <Bell size={20} />
-              {unreadCount > 0 && (
-                <div className="absolute top-1 right-1 bg-red-500 text-white text-[8px] font-black w-4 h-4 rounded-full flex items-center justify-center border-2 border-white dark:border-[#0a0a0a]">
-                  {unreadCount}
-                </div>
-              )}
-            </button>
-            
+          <div className="flex items-center gap-3">
             <button 
               onClick={() => navigateTo('profile')}
-              className="p-2 text-slate-400 dark:text-white/40 hover:text-slate-900 dark:hover:text-white transition-colors"
+              className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-white/5 rounded-2xl text-slate-400 dark:text-white/40 hover:text-emerald-500 transition-all"
             >
               <User size={20} />
             </button>
@@ -7872,7 +7129,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
+      <main className="max-w-4xl mx-auto px-6 pt-28 pb-32">
         {showResetModal && (
           <div className="fixed inset-0 z-[100] bg-slate-900/95 dark:bg-black/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
             <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-3xl p-8 w-full max-w-sm shadow-2xl space-y-6">
@@ -8007,6 +7264,7 @@ export const Dashboard: React.FC = () => {
                 wingo={selectedWingo} 
                 onBack={() => navigateTo('home')} 
                 onSelect={(mode) => navigateTo(mode === 'master' ? 'wingo_master' : 'wingo_predictions')} 
+                isAdmin={isAdmin}
               />
             </motion.div>
           )}
@@ -8036,22 +7294,6 @@ export const Dashboard: React.FC = () => {
           {view === 'aviator' && (
             <motion.div key="aviator" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
               <AviatorPredictionView />
-            </motion.div>
-          )}
-
-          {view === 'cricket' && (
-            <motion.div key="cricket" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <CricketPredictionView 
-                cricketMatches={cricketMatches} 
-                hasAccess={!!activePlan} 
-                onPurchase={() => navigateTo('purchase')} 
-              />
-            </motion.div>
-          )}
-
-          {view === 'stock' && (
-            <motion.div key="stock" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <StockPredictionView />
             </motion.div>
           )}
 
@@ -8147,11 +7389,18 @@ export const Dashboard: React.FC = () => {
                 onShowResetModal={() => setShowResetModal(true)} 
                 pendingResetDay={pendingResetDay}
                 onGiveFeedback={() => navigateTo('feedback')}
+                onShowFAQ={() => navigateTo('faq')}
                 onPurchase={() => navigateTo('purchase')}
                 soundEnabled={soundEnabled}
                 toggleSound={toggleSound}
                 showToast={showToast}
               />
+            </motion.div>
+          )}
+
+          {view === 'faq' && (
+            <motion.div key="faq" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <FAQView onBack={() => navigateTo('profile')} />
             </motion.div>
           )}
 
@@ -8201,12 +7450,6 @@ export const Dashboard: React.FC = () => {
             </motion.div>
           )}
 
-          {view === 'support' && (
-            <motion.div key="support" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <AISupportView profile={profile} onBack={() => navigateTo('home')} />
-            </motion.div>
-          )}
-
           {view === 'feedback' && (
             <motion.div key="feedback" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
               <FeedbackView onBack={() => navigateTo('profile')} />
@@ -8216,20 +7459,32 @@ export const Dashboard: React.FC = () => {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-xl border-t border-slate-200 dark:border-white/10 z-50">
-        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-around">
-          {bottomNavItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => navigateTo(item.id as any)}
-              className={`flex flex-col items-center gap-1 transition-all ${
-                view === item.id ? 'text-emerald-500' : 'text-slate-400 dark:text-white/40'
-              }`}
-            >
-              <item.icon size={20} className={view === item.id ? 'scale-110' : ''} />
-              <span className="text-[10px] font-black uppercase tracking-widest">{item.label}</span>
-            </button>
-          ))}
+      <nav className="fixed bottom-0 left-0 right-0 px-6 pb-8 bg-transparent pointer-events-none z-50">
+        <div className="max-w-md mx-auto h-20 bg-white/80 dark:bg-[#151619]/90 backdrop-blur-2xl border border-slate-200 dark:border-white/10 rounded-[2.5rem] shadow-2xl flex items-center justify-around px-4 pointer-events-auto">
+          {bottomNavItems.map((item) => {
+            const isActive = view === item.id || (item.id === 'color_game_selection' && (view === 'wingo_selection' || view === 'wingo_master' || view === 'wingo_predictions'));
+            return (
+              <button
+                key={item.id}
+                onClick={() => navigateTo(item.id as any)}
+                className={`group relative flex flex-col items-center justify-center w-16 h-16 transition-all ${
+                  isActive ? 'text-emerald-500' : 'text-slate-400 dark:text-white/30'
+                }`}
+              >
+                {isActive && (
+                  <motion.div 
+                    layoutId="activePill"
+                    className="absolute inset-0 bg-emerald-500/10 rounded-2xl -z-10"
+                    transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                  />
+                )}
+                <item.icon size={22} className={`transition-transform duration-300 ${isActive ? 'scale-110 -translate-y-1' : 'group-hover:scale-110'}`} />
+                <span className={`text-[8px] font-black uppercase tracking-[0.2em] transition-all ${isActive ? 'opacity-100 translate-y-0.5' : 'opacity-0 translate-y-2'}`}>
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </nav>
 

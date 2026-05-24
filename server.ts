@@ -26,13 +26,24 @@ async function startServer() {
 
     if (getApps().length === 0) {
       console.log('Initializing Firebase Admin...');
-      console.log('Environment GOOGLE_CLOUD_PROJECT:', process.env.GOOGLE_CLOUD_PROJECT);
+      console.log('Environment Variables:');
+      console.log('GOOGLE_CLOUD_PROJECT:', process.env.GOOGLE_CLOUD_PROJECT);
+      console.log('FIREBASE_CONFIG:', process.env.FIREBASE_CONFIG);
+      console.log('GOOGLE_APPLICATION_CREDENTIALS:', process.env.GOOGLE_APPLICATION_CREDENTIALS ? 'SET' : 'NOT SET');
       
       try {
-        initializeApp();
-        console.log('Firebase Admin initialized with default credentials.');
+        initializeApp(); // Try auto-initialization first
+        console.log(`Firebase Admin initialized with environment defaults`);
       } catch (e) {
-        console.error('Firebase Admin initialization failed:', e);
+        console.log('Auto-initialization failed, trying with config projectId...');
+        try {
+          initializeApp({
+            projectId: firebaseConfig.projectId
+          });
+          console.log(`Firebase Admin initialized with project ID: ${firebaseConfig.projectId}`);
+        } catch (e2) {
+          console.error('Firebase Admin initialization failed:', e2);
+        }
       }
     }
 
@@ -42,30 +53,41 @@ async function startServer() {
 
     console.log(`[FIREBASE] App Project ID: ${currentProjectId}`);
     console.log(`[FIREBASE] Config Database ID: ${configDatabaseId}`);
+    console.log(`[FIREBASE] Process env GOOGLE_CLOUD_PROJECT: ${process.env.GOOGLE_CLOUD_PROJECT}`);
 
     // If the databaseId is the same as the projectId, we should use the default database instance.
     // Otherwise, use the named instance.
-    let db = (configDatabaseId === currentProjectId || !configDatabaseId)
-      ? getFirestore(firebaseAdminApp)
-      : getFirestore(firebaseAdminApp, configDatabaseId);
+    let db;
+    try {
+      db = (configDatabaseId === currentProjectId || !configDatabaseId)
+        ? getFirestore(firebaseAdminApp)
+        : getFirestore(firebaseAdminApp, configDatabaseId);
+      console.log(`Firestore instance obtained for Project: ${currentProjectId}, Database: ${configDatabaseId || '(default)'}`);
+    } catch (dbInitErr: any) {
+      console.error('[FIREBASE] Error getting Firestore instance:', dbInitErr.message);
+      db = getFirestore(firebaseAdminApp);
+    }
     
-    console.log(`Firestore instance obtained for Project: ${currentProjectId}, Database: ${configDatabaseId || '(default)'}`);
-
     // Startup check for Firestore connectivity
     try {
-      console.log('[STARTUP] Testing Firestore connectivity...');
-      await db.collection('settings').limit(1).get();
-      console.log(`[STARTUP] Firestore connected successfully.`);
+      console.log('[STARTUP] Testing Firestore connectivity (collection: settings)...');
+      // Try to get a specific document instead of listing collection (Admin SDK list can be more restricted in some environments?)
+      const testRef = db.collection('settings').doc('admin');
+      const testSnap = await testRef.get();
+      console.log(`[STARTUP] Firestore check successful. Document exists: ${testSnap.exists}`);
     } catch (err: any) {
       console.error('[STARTUP] Firestore connectivity test failed:', err.message, 'Code:', err.code);
       if (err.code === 7 || err.code === 5 || err.message.toLowerCase().includes('permission') || err.message.toLowerCase().includes('not found') || err.message.includes('NOT_FOUND')) {
-        console.warn('[STARTUP] Falling back to default Firestore database...');
-        db = getFirestore(firebaseAdminApp);
+        console.warn('[STARTUP] Falling back to default Firestore database due to error...');
         try {
-          await db.collection('settings').limit(1).get();
-          console.log('[STARTUP] Fallback Firestore connected successfully.');
+          const fallbackDb = getFirestore(firebaseAdminApp);
+          await fallbackDb.collection('settings').limit(1).get();
+          db = fallbackDb;
+          console.log('[STARTUP] Fallback Firestore (default) connected successfully.');
         } catch (fallbackErr: any) {
           console.error('[STARTUP] Fallback Firestore also failed:', fallbackErr.message);
+          // Last ditch effort: try to initialize with NO projectId (let it infer from environment)
+          console.warn('[STARTUP] Last ditch effort: Try to use environment defaults...');
         }
       }
     }

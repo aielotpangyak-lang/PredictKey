@@ -242,7 +242,7 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
       return;
     }
     const amount = Number(withdrawAmount);
-    const minWithdraw = adminSettings?.minWithdrawalAmount || 1000;
+    const minWithdraw = adminSettings?.minWithdrawalAmount || 500;
     if (!amount || amount < minWithdraw) {
       showToast(`Minimum withdrawal is ₹${minWithdraw}`);
       return;
@@ -337,10 +337,16 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <Wallet className="text-indigo-500" /> Wallet
-        </h2>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-600">
+            <Wallet size={24} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Wallet</h2>
+            <p className="text-[10px] font-bold text-slate-400 dark:text-white/30 uppercase tracking-widest">Financial Overview</p>
+          </div>
+        </div>
         <div className="flex gap-2">
           <button 
             onClick={() => handleExport('csv')}
@@ -356,47 +362,66 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
 
       {/* Balance Card */}
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-3xl p-6 text-white relative overflow-hidden shadow-xl"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="relative overflow-hidden bg-[#151619] border border-white/10 rounded-[2.5rem] p-8 text-white shadow-2xl"
       >
-        <div className="relative z-10">
-          <div className="flex justify-between items-start mb-6">
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-8">
+          <div className="space-y-4">
             <div>
-              <p className="text-indigo-100 text-xs font-bold uppercase tracking-widest mb-1">Available Balance</p>
-              <h3 className="text-4xl font-black tracking-tight">₹{profile.walletBalance.toLocaleString()}</h3>
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-white/40 text-[10px] font-black uppercase tracking-widest">Wallet Balance</p>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-white/40 text-2xl font-bold">₹</span>
+                <h3 className="text-5xl font-black tracking-tighter">
+                  {profile.walletBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </h3>
+              </div>
             </div>
-            <button 
-              onClick={async () => {
-                setIsRefreshing(true);
-                await refreshProfile();
-                setIsRefreshing(false);
-                showToast('Balance refreshed');
-              }}
-              disabled={isRefreshing}
-              className={`p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors ${isRefreshing ? 'animate-spin' : ''}`}
-            >
-              <RefreshCw size={16} />
-            </button>
+            
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Withdrawal Ready</span>
+              </div>
+              <button 
+                onClick={async () => {
+                  setIsRefreshing(true);
+                  await refreshProfile();
+                  setTimeout(() => {
+                    setIsRefreshing(false);
+                    showToast('Balance refreshed');
+                  }, 1000);
+                }}
+                disabled={isRefreshing}
+                className="flex items-center gap-1.5 text-white/40 hover:text-white transition-colors text-[10px] font-black uppercase tracking-widest"
+              >
+                <RefreshCw size={12} className={isRefreshing ? 'animate-spin' : ''} /> Refresh
+              </button>
+            </div>
           </div>
-          
-          <div className="grid grid-cols-2 gap-3">
+
+          <div className="flex gap-3">
             <button 
               onClick={() => setActiveTab('deposit')}
-              className="bg-white/10 hover:bg-white/20 backdrop-blur-sm py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors"
+              className="flex-1 md:flex-none px-8 py-4 bg-indigo-500 hover:bg-indigo-400 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
             >
               <ArrowDownLeft size={16} /> Deposit
             </button>
             <button 
               onClick={() => setActiveTab('withdraw')}
-              className="bg-white text-indigo-600 hover:bg-indigo-50 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors shadow-lg"
+              className="flex-1 md:flex-none px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2"
             >
               <ArrowUpRight size={16} /> Withdraw
             </button>
           </div>
         </div>
-        <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-purple-500/20 rounded-full blur-3xl" />
+        
+        {/* Background Accents */}
+        <div className="absolute top-[-20%] right-[-10%] w-64 h-64 bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none" />
+        <div className="absolute bottom-[-20%] left-[-10%] w-64 h-64 bg-purple-500/10 rounded-full blur-[100px] pointer-events-none" />
       </motion.div>
 
       {/* Tabs */}
@@ -468,38 +493,48 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
                 <p className="text-slate-500">No transactions yet</p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="grid grid-cols-1 gap-3">
                 {transactions.map(tx => (
-                  <div key={tx.id} className="bg-white dark:bg-[#151619] p-4 rounded-2xl border border-slate-200 dark:border-white/10 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        tx.type === 'deposit' || tx.type === 'transfer_in' ? 'bg-emerald-500/10 text-emerald-500' : 
-                        tx.type === 'withdraw' || tx.type === 'transfer_out' ? 'bg-orange-500/10 text-orange-500' : 
-                        'bg-blue-500/10 text-blue-500'
-                      }`}>
-                        {tx.type === 'deposit' || tx.type === 'transfer_in' ? <ArrowDownLeft size={20} /> : 
-                         tx.type === 'withdraw' || tx.type === 'transfer_out' ? <ArrowUpRight size={20} /> : 
-                         <Wallet size={20} />}
+                  <div key={tx.id} className="group bg-[#151619] border border-white/5 hover:border-white/10 p-5 rounded-3xl transition-all">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 ${
+                          tx.type === 'deposit' || tx.type === 'transfer_in' ? 'bg-emerald-500/10 text-emerald-500' : 
+                          tx.type === 'withdraw' || tx.type === 'transfer_out' ? 'bg-orange-500/10 text-orange-500' : 
+                          'bg-indigo-500/10 text-indigo-500'
+                        }`}>
+                          {tx.type === 'deposit' || tx.type === 'transfer_in' ? <ArrowDownLeft size={20} /> : 
+                           tx.type === 'withdraw' || tx.type === 'transfer_out' ? <ArrowUpRight size={20} /> : 
+                           <Wallet size={20} />}
+                        </div>
+                        <div>
+                          <p className="text-xs font-black text-white uppercase tracking-widest mb-0.5">{tx.type.replace('_', ' ')}</p>
+                          <p className="text-[10px] font-bold text-white/30 uppercase tracking-tight">{tx.createdAt?.toDate().toLocaleString() || 'Just now'}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-bold capitalize">{tx.type.replace('_', ' ')}</p>
-                        <p className="text-xs text-slate-500">{tx.createdAt?.toDate().toLocaleString() || 'Just now'}</p>
+                      <div className="text-right">
+                        <p className={`text-lg font-black tracking-tighter ${tx.type === 'deposit' || tx.type === 'transfer_in' ? 'text-emerald-500' : 'text-white'}`}>
+                          {tx.type === 'deposit' || tx.type === 'transfer_in' ? '+' : '-'}₹{tx.amount.toLocaleString()}
+                        </p>
+                        <div className="flex items-center justify-end gap-1.5 mt-1">
+                          <div className={`w-1 h-1 rounded-full ${
+                            tx.status === 'pending' ? 'bg-amber-500 animate-pulse' :
+                            tx.status === 'approved' ? 'bg-emerald-500' : 'bg-red-500'
+                          }`} />
+                          <span className={`text-[9px] uppercase font-black tracking-[0.1em] ${
+                            tx.status === 'pending' ? 'text-amber-500' :
+                            tx.status === 'approved' ? 'text-emerald-500' : 'text-red-500'
+                          }`}>{tx.status}</span>
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className={`font-black ${tx.type === 'deposit' || tx.type === 'transfer_in' ? 'text-emerald-500' : 'text-slate-900 dark:text-white'}`}>
-                        {tx.type === 'deposit' || tx.type === 'transfer_in' ? '+' : '-'}₹{tx.amount}
-                      </p>
-                      <div className="flex items-center justify-end gap-1 mt-1">
-                        {tx.status === 'pending' && <Clock size={12} className="text-amber-500" />}
-                        {tx.status === 'approved' && <CheckCircle2 size={12} className="text-emerald-500" />}
-                        {tx.status === 'rejected' && <XCircle size={12} className="text-red-500" />}
-                        <span className={`text-[10px] uppercase font-bold ${
-                          tx.status === 'pending' ? 'text-amber-500' :
-                          tx.status === 'approved' ? 'text-emerald-500' : 'text-red-500'
-                        }`}>{tx.status}</span>
+                    {tx.details && (
+                      <div className="mt-4 pt-4 border-t border-white/5">
+                        <p className="text-[10px] font-medium text-white/30 leading-relaxed italic">
+                          " {tx.details} "
+                        </p>
                       </div>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -510,18 +545,48 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
         {activeTab === 'deposit' && (
           <motion.div key="deposit" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
             {depositStep === 'amount' ? (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-bold mb-2">Enter Deposit Amount (₹)</label>
-                  <input 
-                    type="number" 
-                    value={depositAmount} 
-                    onChange={e => setDepositAmount(e.target.value)} 
-                    placeholder="Min ₹100" 
-                    className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" 
-                    required 
-                  />
+                  <label className="block text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em] mb-3">Deposit Amount (₹)</label>
+                  <div className="relative">
+                    <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-400 dark:text-white/20 tracking-tighter italic">₹</span>
+                    <input 
+                      type="number" 
+                      value={depositAmount} 
+                      onChange={e => setDepositAmount(e.target.value)} 
+                      placeholder="0.00" 
+                      className="w-full bg-white dark:bg-[#151619] border-2 border-slate-100 dark:border-white/5 rounded-3xl p-8 pl-14 text-4xl font-black focus:border-indigo-500/50 outline-none transition-all placeholder:text-slate-200 dark:placeholder:text-white/5" 
+                      required 
+                    />
+                  </div>
+                  
+                  <div className="grid grid-cols-4 gap-2 mt-4">
+                    {[100, 500, 1000, 5000].map((amt) => (
+                      <button
+                        key={amt}
+                        onClick={() => setDepositAmount(amt.toString())}
+                        className={`py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest border transition-all ${
+                          depositAmount === amt.toString()
+                            ? 'bg-indigo-500 border-indigo-500 text-white shadow-lg shadow-indigo-500/20'
+                            : 'bg-white dark:bg-white/5 border-slate-100 dark:border-white/5 text-slate-500 dark:text-white/40 hover:border-slate-300 dark:hover:border-white/20'
+                        }`}
+                      >
+                        ₹{amt}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
+                <div className="bg-emerald-500/5 border border-emerald-500/10 rounded-[2rem] p-6 flex items-start gap-4">
+                  <div className="bg-emerald-500 p-2 rounded-xl text-white">
+                    <CheckCircle2 size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1">Safe & Secure Deposits</p>
+                    <p className="text-[10px] text-emerald-600/60 dark:text-emerald-400/50 font-medium">Your funds are protected by industry-standard encryption. Min deposit ₹100.</p>
+                  </div>
+                </div>
+
                 <button 
                   onClick={() => {
                     if (Number(depositAmount) < 100) {
@@ -530,62 +595,75 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
                     }
                     setDepositStep('payment');
                   }}
-                  className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-colors"
+                  className="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-black py-5 rounded-[2rem] transition-all active:scale-95 shadow-xl shadow-indigo-500/20 uppercase tracking-[0.2em] text-xs"
                 >
-                  Next
+                  Continue to Payment
                 </button>
               </div>
             ) : (
               <div className="space-y-6">
-                <div className="bg-indigo-50 dark:bg-indigo-500/10 p-6 rounded-3xl border border-indigo-100 dark:border-indigo-500/20 text-center">
-                  <p className="text-sm text-indigo-600 dark:text-indigo-400 font-bold mb-2">Send ₹{depositAmount} To</p>
-                  <p className="text-2xl font-black text-slate-900 dark:text-white mb-4">{adminSettings?.depositUpiId || 'admin@upi'}</p>
-                  {adminSettings?.depositQrCode ? (
-                    <img src={adminSettings.depositQrCode} alt="QR Code" className="mx-auto rounded-xl shadow-md w-48 h-48 object-contain bg-white p-2" />
-                  ) : (
-                    <div className="mx-auto w-48 h-48 bg-white rounded-xl shadow-md flex items-center justify-center">
-                      <QrCode size={64} className="text-slate-300" />
+                <div className="bg-[#151619] border border-white/10 rounded-[3rem] p-10 text-center relative overflow-hidden">
+                  <div className="relative z-10 space-y-6">
+                    <div>
+                      <p className="text-white/30 text-[10px] font-black uppercase tracking-widest mb-2">Send ₹{depositAmount} To</p>
+                      <h4 className="text-3xl font-black text-white tracking-tighter italic">{adminSettings?.depositUpiId || 'admin@upi'}</h4>
                     </div>
-                  )}
-                  <button 
-                    onClick={() => {
-                      navigator.clipboard.writeText(adminSettings?.depositUpiId || 'admin@upi');
-                      showToast('UPI ID copied!');
-                    }}
-                    className="mt-4 text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center justify-center gap-1 mx-auto"
-                  >
-                    <Copy size={14} /> Copy UPI ID
-                  </button>
-                </div>
 
-                <form onSubmit={handleDeposit} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-bold mb-2">UTR / Reference Number</label>
-                    <input type="text" value={depositUtr} onChange={e => setDepositUtr(e.target.value)} placeholder="Enter 12-digit UTR" className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-2">Payment Screenshot</label>
-                    <div className="relative border-2 border-dashed border-slate-300 dark:border-white/20 rounded-xl p-6 text-center hover:bg-slate-50 dark:hover:bg-white/5 transition-colors cursor-pointer">
-                      <input type="file" accept="image/*" onChange={handleImageUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" required={!screenshotBase64} />
-                      {screenshotBase64 ? (
-                        <div className="space-y-2">
-                          <CheckCircle2 className="mx-auto text-emerald-500" size={32} />
-                          <p className="text-sm font-bold text-emerald-500">Screenshot Uploaded</p>
-                        </div>
+                    <div className="relative inline-block group">
+                      <div className="absolute -inset-4 bg-indigo-500/20 rounded-[2.5rem] blur-xl opacity-50 group-hover:opacity-100 transition-opacity" />
+                      {adminSettings?.depositQrCode ? (
+                        <img src={adminSettings.depositQrCode} alt="QR Code" className="relative mx-auto rounded-[2rem] shadow-2xl w-56 h-56 object-contain bg-white p-4" />
                       ) : (
-                        <div className="space-y-2">
-                          <Upload className="mx-auto text-slate-400" size={32} />
-                          <p className="text-sm text-slate-500">Tap to upload screenshot (Max 1MB)</p>
+                        <div className="relative mx-auto w-56 h-56 bg-white rounded-[2rem] shadow-2xl flex items-center justify-center">
+                          <QrCode size={80} className="text-slate-900/10" />
                         </div>
                       )}
                     </div>
+
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(adminSettings?.depositUpiId || 'admin@upi');
+                        showToast('UPI ID copied!');
+                      }}
+                      className="flex items-center gap-2 mx-auto px-6 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-[10px] font-black text-indigo-400 uppercase tracking-widest hover:bg-indigo-500/20 transition-all"
+                    >
+                      <Copy size={14} /> Copy ID
+                    </button>
                   </div>
-                  <div className="flex gap-3">
-                    <button type="button" onClick={() => setDepositStep('amount')} className="flex-1 bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-white/60 font-bold py-4 rounded-xl transition-colors">
+                  <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-indigo-500/5 to-purple-500/5 pointer-events-none" />
+                </div>
+
+                <form onSubmit={handleDeposit} className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest ml-2">Transaction ID (UTR)</label>
+                      <input type="text" value={depositUtr} onChange={e => setDepositUtr(e.target.value)} placeholder="12-digit UTR Number" className="w-full bg-white dark:bg-[#151619] border-2 border-slate-100 dark:border-white/5 rounded-2xl px-6 py-4 font-bold focus:border-indigo-500/50 outline-none transition-all" required />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest ml-2">Proof of Payment</label>
+                      <label className="relative flex items-center justify-center gap-3 w-full bg-white dark:bg-[#151619] border-2 border-slate-100 dark:border-white/5 rounded-2xl px-6 py-4 font-bold border-dashed hover:border-indigo-500/50 cursor-pointer transition-all">
+                        <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" required={!screenshotBase64} />
+                        {screenshotBase64 ? (
+                          <>
+                            <CheckCircle2 className="text-emerald-500" size={20} />
+                            <span className="text-emerald-500 text-xs">Attached</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="text-slate-400" size={20} />
+                            <span className="text-slate-400 text-xs">Upload Image</span>
+                          </>
+                        )}
+                      </label>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-4">
+                    <button type="button" onClick={() => setDepositStep('amount')} className="flex-1 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-white/60 font-black py-5 rounded-[2rem] transition-all uppercase tracking-widest text-[10px]">
                       Back
                     </button>
-                    <button type="submit" disabled={isSubmittingDeposit} className="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-colors disabled:opacity-50">
-                      {isSubmittingDeposit ? 'Submitting...' : 'Submit Request'}
+                    <button type="submit" disabled={isSubmittingDeposit} className="flex-[2] bg-indigo-500 hover:bg-indigo-400 text-white font-black py-5 rounded-[2rem] transition-all active:scale-95 shadow-xl shadow-indigo-500/20 uppercase tracking-[0.2em] text-xs disabled:opacity-50">
+                      {isSubmittingDeposit ? 'Verifying...' : 'Finalize Deposit'}
                     </button>
                   </div>
                 </form>
@@ -595,68 +673,94 @@ const WalletView: React.FC<WalletViewProps> = ({ profile, onBack, showToast }) =
         )}
 
         {activeTab === 'withdraw' && (
-          <motion.div key="withdraw" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-6">
-            <div className="bg-orange-50 dark:bg-orange-500/10 p-4 rounded-2xl border border-orange-100 dark:border-orange-500/20 flex items-start gap-3">
-              <Building2 className="text-orange-500 shrink-0 mt-1" size={20} />
+          <motion.div key="withdraw" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
+            <div className="bg-orange-500/5 border border-orange-500/10 rounded-[2rem] p-6 flex items-start gap-4">
+              <div className="bg-orange-500 p-2 rounded-xl text-white">
+                <Building2 size={20} />
+              </div>
               <div>
-                <p className="text-sm font-bold text-orange-800 dark:text-orange-400">Minimum Withdrawal: ₹{adminSettings?.minWithdrawalAmount || 1000}</p>
-                <p className="text-xs text-orange-600 dark:text-orange-300 mt-1">Please ensure your details are correct. Withdrawals take 24-48 hours to process.</p>
+                <p className="text-xs font-black text-orange-600 dark:text-orange-400 uppercase tracking-widest mb-1">Important Withdrawal Info</p>
+                <div className="space-y-1">
+                  <p className="text-[10px] text-orange-600/60 dark:text-orange-400/50 font-bold italic">Min: ₹{adminSettings?.minWithdrawalAmount || 500} | Max per round: ₹50,000</p>
+                  <p className="text-[10px] text-orange-600/60 dark:text-orange-400/50">Processing time: 2-24 Hours. Double check bank details before submitting.</p>
+                </div>
               </div>
             </div>
 
-            <form onSubmit={handleWithdraw} className="space-y-4">
+            <form onSubmit={handleWithdraw} className="space-y-8">
               <div>
-                <label className="block text-sm font-bold mb-2">Withdrawal Amount (₹)</label>
-                <input type="number" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)} placeholder={`Max: ₹${profile.walletBalance}`} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required min={adminSettings?.minWithdrawalAmount || 1000} max={profile.walletBalance} />
+                <label className="block text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em] mb-4">Withdraw Amount (₹)</label>
+                <div className="relative">
+                  <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-400 dark:text-white/20 tracking-tighter italic">₹</span>
+                  <input 
+                    type="number" 
+                    value={withdrawAmount} 
+                    onChange={e => setWithdrawAmount(e.target.value)} 
+                    placeholder="0.00" 
+                    className="w-full bg-white dark:bg-[#151619] border-2 border-slate-100 dark:border-white/5 rounded-3xl p-8 pl-14 text-4xl font-black focus:border-orange-500/50 outline-none transition-all placeholder:text-slate-200 dark:placeholder:text-white/5" 
+                    required 
+                    min={adminSettings?.minWithdrawalAmount || 500} 
+                    max={profile.walletBalance} 
+                  />
+                  <div className="absolute right-6 top-1/2 -translate-y-1/2">
+                    <button 
+                      type="button"
+                      onClick={() => setWithdrawAmount(profile.walletBalance.toString())}
+                      className="text-[10px] font-black text-orange-500 uppercase tracking-widest bg-orange-500/10 px-3 py-1 rounded-full hover:bg-orange-500/20"
+                    >
+                      Max
+                    </button>
+                  </div>
+                </div>
               </div>
               
-              <div className="space-y-4 pt-4 border-t border-slate-200 dark:border-white/10">
-                <div className="flex gap-2 p-1 bg-slate-100 dark:bg-white/5 rounded-xl">
+              <div className="space-y-6">
+                <div className="flex bg-slate-100 dark:bg-white/5 p-1.5 rounded-[2rem] border border-slate-200 dark:border-white/5">
                   <button 
                     type="button"
                     onClick={() => setWithdrawType('bank')}
-                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${withdrawType === 'bank' ? 'bg-white dark:bg-[#151619] text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+                    className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${withdrawType === 'bank' ? 'bg-white dark:bg-[#151619] text-orange-500 shadow-xl' : 'text-slate-400 dark:text-white/20'}`}
                   >
                     Bank Transfer
                   </button>
                   <button 
                     type="button"
                     onClick={() => setWithdrawType('upi')}
-                    className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${withdrawType === 'upi' ? 'bg-white dark:bg-[#151619] text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+                    className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${withdrawType === 'upi' ? 'bg-white dark:bg-[#151619] text-orange-500 shadow-xl' : 'text-slate-400 dark:text-white/20'}`}
                   >
-                    UPI ID
+                    UPI Settlement
                   </button>
                 </div>
 
                 {withdrawType === 'bank' ? (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold mb-1 text-slate-500">Account Holder Name</label>
-                      <input type="text" value={bankDetails.accountName} onChange={e => setBankDetails({...bankDetails, accountName: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em] ml-2">Holder Name</label>
+                      <input type="text" value={bankDetails.accountName} onChange={e => setBankDetails({...bankDetails, accountName: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl px-6 py-4 font-bold focus:border-indigo-500/50 outline-none transition-all" required />
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold mb-1 text-slate-500">Account Number</label>
-                      <input type="text" value={bankDetails.accountNumber} onChange={e => setBankDetails({...bankDetails, accountNumber: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em] ml-2">Account Number</label>
+                      <input type="text" value={bankDetails.accountNumber} onChange={e => setBankDetails({...bankDetails, accountNumber: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl px-6 py-4 font-bold focus:border-indigo-500/50 outline-none transition-all" required />
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold mb-1 text-slate-500">IFSC Code</label>
-                      <input type="text" value={bankDetails.ifscCode} onChange={e => setBankDetails({...bankDetails, ifscCode: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none uppercase" required />
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em] ml-2">IFSC Code</label>
+                      <input type="text" value={bankDetails.ifscCode} onChange={e => setBankDetails({...bankDetails, ifscCode: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl px-6 py-4 font-bold focus:border-indigo-500/50 outline-none transition-all uppercase" required />
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold mb-1 text-slate-500">Bank Name</label>
-                      <input type="text" value={bankDetails.bankName} onChange={e => setBankDetails({...bankDetails, bankName: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                    <div className="space-y-2">
+                      <label className="block text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em] ml-2">Bank Name</label>
+                      <input type="text" value={bankDetails.bankName} onChange={e => setBankDetails({...bankDetails, bankName: e.target.value})} className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl px-6 py-4 font-bold focus:border-indigo-500/50 outline-none transition-all" required />
                     </div>
                   </div>
                 ) : (
-                  <div>
-                    <label className="block text-xs font-bold mb-1 text-slate-500">UPI ID</label>
-                    <input type="text" value={upiId} onChange={e => setUpiId(e.target.value)} placeholder="username@upi" className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none" required />
+                  <div className="space-y-2">
+                    <label className="block text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em] ml-2">Recipient UPI ID</label>
+                    <input type="text" value={upiId} onChange={e => setUpiId(e.target.value)} placeholder="username@bank" className="w-full bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl px-6 py-4 font-bold focus:border-indigo-500/50 outline-none transition-all" required />
                   </div>
                 )}
               </div>
 
-              <button type="submit" disabled={isSubmittingWithdraw || Number(withdrawAmount) > profile.walletBalance} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl transition-colors disabled:opacity-50 mt-4">
-                {isSubmittingWithdraw ? 'Processing...' : 'Request Withdrawal'}
+              <button type="submit" disabled={isSubmittingWithdraw || Number(withdrawAmount) > profile.walletBalance} className="w-full bg-[#151619] text-white border border-white/5 hover:border-orange-500/50 font-black py-5 rounded-[2rem] transition-all active:scale-95 shadow-xl uppercase tracking-[0.2em] text-xs disabled:opacity-50">
+                {isSubmittingWithdraw ? 'Processing Request...' : 'Initiate Withdrawal'}
               </button>
             </form>
           </motion.div>
