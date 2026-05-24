@@ -4,7 +4,8 @@ import { PlanProvider } from './PlanContext';
 import { ThemeProvider } from './ThemeContext';
 import { Auth } from './components/Auth';
 import { Dashboard } from './components/Dashboard';
-import { Loader2, Wrench } from 'lucide-react';
+import LightningLoader from './components/LightningLoader';
+import { Wrench } from 'lucide-react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -19,14 +20,30 @@ const AppContent: React.FC = () => {
       } else {
         setAppSettings({ maintenanceMode: false });
       }
+    }, (err) => {
+      console.error('App settings snapshot error:', err);
+      // Fallback if we can't connect, so user isn't stuck
+      setAppSettings({ maintenanceMode: false });
     });
-    return () => unsub();
+    
+    // Safety timeout: if we don't get settings in 5 seconds, fallback
+    const timeout = setTimeout(() => {
+      if (!appSettings) {
+        console.warn('App settings load timed out, using defaults');
+        setAppSettings({ maintenanceMode: false });
+      }
+    }, 5000);
+
+    return () => {
+      unsub();
+      clearTimeout(timeout);
+    };
   }, []);
 
   if (loading || !appSettings) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-[#0a0a0a] flex items-center justify-center transition-colors duration-500">
-        <Loader2 className="animate-spin text-emerald-500" size={48} />
+      <div className="min-h-screen premium-gradient flex items-center justify-center transition-colors duration-500">
+        <LightningLoader />
       </div>
     );
   }

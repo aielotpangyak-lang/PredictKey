@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Trophy, ChevronLeft, CheckCircle2, Clock, Youtube, Instagram, AlertCircle } from 'lucide-react';
 import { UserProfile } from '../types';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface GiveawayViewProps {
   profile: UserProfile;
@@ -13,10 +15,21 @@ const GiveawayView: React.FC<GiveawayViewProps> = ({ profile, onBack, showToast 
   const [timeLeft, setTimeLeft] = useState('');
   const [isLive, setIsLive] = useState(false);
   const [isEligible, setIsEligible] = useState(false);
+  const [giveawaySettings, setGiveawaySettings] = useState<any>({});
   const [tasks, setTasks] = useState([
     { id: 1, name: 'Subscribe to YouTube', icon: Youtube, color: 'text-red-500', completed: false },
     { id: 2, name: 'Comment on Instagram', icon: Instagram, color: 'text-pink-500', completed: false },
   ]);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'giveaway'), (doc) => {
+      if (doc.exists()) {
+        setGiveawaySettings(doc.data());
+      }
+    });
+
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     const calculateTimeLeft = () => {
@@ -85,6 +98,27 @@ const GiveawayView: React.FC<GiveawayViewProps> = ({ profile, onBack, showToast 
     }
   };
 
+  if (!giveawaySettings.prize) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Trophy className="text-pink-500" /> Daily Giveaway
+          </h2>
+          <button onClick={onBack} className="active:scale-95 hover:scale-[1.02] transition-transform bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-white/60 hover:text-slate-900 dark:hover:text-white px-4 py-2 rounded-xl border border-slate-200 dark:border-white/10 transition-all text-sm font-bold flex items-center gap-2">
+            <ChevronLeft size={16} /> Back
+          </button>
+        </div>
+
+        <div className="bg-slate-100 dark:bg-[#151619] rounded-3xl p-12 text-center border border-slate-200 dark:border-white/10">
+          <Trophy className="mx-auto text-slate-300 dark:text-white/10 w-24 h-24 mb-4" />
+          <h3 className="text-2xl font-black text-slate-400 dark:text-white/40 uppercase tracking-widest">No Events Yet</h3>
+          <p className="text-slate-400 dark:text-white/30 mt-2">Check back later for exciting giveaways and prizes.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -126,7 +160,7 @@ const GiveawayView: React.FC<GiveawayViewProps> = ({ profile, onBack, showToast 
       ) : (
         <div className="bg-gradient-to-br from-pink-500 to-rose-600 rounded-3xl p-8 text-white shadow-xl shadow-pink-500/20 text-center relative overflow-hidden">
           <div className="relative z-10">
-            <h3 className="text-4xl font-black mb-2">₹1,000 + 1 Month Pro</h3>
+            <h3 className="text-4xl font-black mb-2">{giveawaySettings.prize}</h3>
             <p className="text-white/80 mb-6">Winner announced live every day at 5:00 PM!</p>
             
             <div className="bg-black/20 rounded-2xl p-6 backdrop-blur-sm inline-block">
@@ -180,3 +214,4 @@ const GiveawayView: React.FC<GiveawayViewProps> = ({ profile, onBack, showToast 
 };
 
 export default GiveawayView;
+

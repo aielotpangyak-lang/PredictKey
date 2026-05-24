@@ -20,9 +20,8 @@ export interface UserProfile {
   referralCount: number;
   walletBalance: number;
   deviceId?: string;
-  vipLevel: number; // 1 to 7
   totalDeposits: number;
-  claimedRewards: string[]; // e.g., ['3_referrals', '10_referrals', 'vip_2_reward']
+  claimedRewards: string[]; // e.g., ['3_referrals', '10_referrals']
   bankDetails?: BankDetails;
   withdrawalDetails?: {
     type: 'bank' | 'upi';
@@ -32,7 +31,6 @@ export interface UserProfile {
   lastLoginRewardDate?: string; // YYYY-MM-DD
   lastSpinDate?: string; // YYYY-MM-DD
   dailyFreeSpinsUsed?: number;
-  claimedVipRewards?: number[]; // Array of VIP levels already claimed
 }
 
 export interface Transaction {
@@ -82,6 +80,10 @@ export interface Coupon {
   discountPercent: number;
   isActive: boolean;
   createdAt: any;
+  targetType?: 'all' | 'new_users' | 'specific_user';
+  specificUserEmail?: string;
+  maxClaims?: number;
+  claimedBy?: string[];
 }
 
 export interface Notification {

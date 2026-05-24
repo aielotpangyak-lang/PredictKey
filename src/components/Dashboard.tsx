@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc, setDoc, getDocs, getDoc, deleteField, orderBy, limit } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc, setDoc, getDocs, getDoc, deleteField, orderBy, limit, arrayUnion } from 'firebase/firestore';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signOut, createUserWithEmailAndPassword } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -13,7 +13,7 @@ import { DailyLogin } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { QRCodeCanvas } from 'qrcode.react';
 import WalletView from './WalletView';
-import VIPView from './VIPView';
+
 import GiveawayView from './GiveawayView';
 import SpinWheelView from './SpinWheelView';
 import RewardsView from './RewardsView';
@@ -28,6 +28,7 @@ import SocialView from './SocialView';
 import ColorPredictionView from './ColorPredictionView';
 import GameSettingsView from './GameSettingsView';
 import AviatorPredictionView from './AviatorPredictionView';
+import LightningLoader from './LightningLoader';
 import { AnalyticsView } from './AnalyticsView';
 import { FraudDetectionView } from './FraudDetectionView';
 import { FAQView } from './FAQView';
@@ -64,6 +65,7 @@ import {
   X,
   Wrench,
   Target,
+  Key,
   Star,
   Zap,
   Activity,
@@ -163,6 +165,14 @@ const PurchaseView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [utr, setUtr] = useState('');
   const [useWallet, setUseWallet] = useState(false);
 
+  useEffect(() => {
+    if (profile && profile.walletBalance > 0) {
+      setUseWallet(true);
+    } else {
+      setUseWallet(false);
+    }
+  }, [profile?.walletBalance]);
+
   const [paymentSettings, setPaymentSettings] = useState({ upiId: 'niggaseller@nyes', merchantName: 'CHOW AIELOT PANGYAK' });
 
   useEffect(() => {
@@ -189,32 +199,11 @@ const PurchaseView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const perDayPrice = 85;
 
   const isWithin24Hours = () => {
-    if (!profile?.createdAt) return false;
-    const created = profile.createdAt.toDate ? profile.createdAt.toDate() : new Date(profile.createdAt);
-    const now = new Date();
-    const diff = now.getTime() - created.getTime();
-    return diff < 24 * 60 * 60 * 1000;
+    return false;
   };
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (!profile?.createdAt) return;
-      const created = profile.createdAt.toDate ? profile.createdAt.toDate() : new Date(profile.createdAt);
-      const expiry = new Date(created.getTime() + 24 * 60 * 60 * 1000);
-      const now = new Date();
-      const diff = expiry.getTime() - now.getTime();
-
-      if (diff <= 0) {
-        setTimeLeft(null);
-        clearInterval(timer);
-      } else {
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-        setTimeLeft(`${hours}h ${minutes}m ${seconds}s`);
-      }
-    }, 1000);
-    return () => clearInterval(timer);
+    setTimeLeft(null);
   }, [profile]);
 
   const calculatePrice = () => {
@@ -228,32 +217,30 @@ const PurchaseView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const originalPrice = price;
     let finalPrice = price;
 
-    // Apply 20% welcome discount if within 24h
-    if (isWithin24Hours()) {
-      finalPrice = finalPrice * 0.8;
-    }
-
     // Apply coupon discount
     if (appliedCoupon) {
       finalPrice = finalPrice * (1 - appliedCoupon.discountPercent / 100);
     }
 
-    // Apply 20% wallet discount
-    if (useWallet) {
-      finalPrice = finalPrice * 0.8;
+    let walletDeduction = 0;
+    if (useWallet && profile) {
+      const balance = profile.walletBalance || 0;
+      walletDeduction = Math.min(finalPrice, balance);
+      finalPrice = finalPrice - walletDeduction;
     }
 
     return {
       original: Math.round(originalPrice),
       final: Math.max(0, Math.round(finalPrice)),
-      discount: Math.round(originalPrice - finalPrice)
+      discount: Math.round(originalPrice - finalPrice - walletDeduction),
+      walletDeduction: Math.round(walletDeduction)
     };
   };
 
-  const { original, final, discount } = calculatePrice();
+  const { original, final, discount, walletDeduction } = calculatePrice();
 
   const handleApplyCoupon = async () => {
-    if (!couponCode.trim()) return;
+    if (!couponCode.trim() || !profile) return;
     setCouponLoading(true);
     try {
       const q = query(collection(db, 'coupons'), where('code', '==', couponCode.trim().toUpperCase()), where('isActive', '==', true));
@@ -263,7 +250,50 @@ const PurchaseView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         setAppliedCoupon(null);
       } else {
         const couponData = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as Coupon;
+        
+        // 1. Max claims check
+        if (couponData.maxClaims && couponData.maxClaims > 0) {
+          const totalClaims = couponData.claimedBy?.length || 0;
+          if (totalClaims >= couponData.maxClaims) {
+            showToast('This coupon has reached its maximum claim limit.');
+            setAppliedCoupon(null);
+            return;
+          }
+        }
+
+        // 2. Already used check
+        if (couponData.claimedBy && couponData.claimedBy.includes(profile.id)) {
+          showToast('You have already used this coupon.');
+          setAppliedCoupon(null);
+          return;
+        }
+
+        // 3. Target Audience check (New Users vs Specific User)
+        if (couponData.targetType === 'new_users') {
+          if (!profile.createdAt) {
+            showToast('Could not verify registration date.');
+            setAppliedCoupon(null);
+            return;
+          }
+          const createdDate = profile.createdAt.toDate ? profile.createdAt.toDate() : new Date(profile.createdAt);
+          const daysDiff = (new Date().getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24);
+          if (daysDiff > 7) {
+            showToast('This coupon is only valid for new users (first 7 days).');
+            setAppliedCoupon(null);
+            return;
+          }
+        } else if (couponData.targetType === 'specific_user') {
+          const userEmail = (user?.email || profile.email || '').trim().toLowerCase();
+          const targetEmail = (couponData.specificUserEmail || '').trim().toLowerCase();
+          if (userEmail !== targetEmail) {
+            showToast('This coupon is not valid for your account.');
+            setAppliedCoupon(null);
+            return;
+          }
+        }
+
         setAppliedCoupon(couponData);
+        showToast('Coupon applied successfully!');
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.GET, 'coupons');
@@ -275,12 +305,7 @@ const PurchaseView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const handlePurchase = async () => {
     if (!user || !profile) return;
     
-    if (useWallet) {
-      if (profile.walletBalance < final) {
-        showToast('Insufficient wallet balance.');
-        return;
-      }
-    } else if (final > 0 && utr.length !== 12) {
+    if (final > 0 && utr.length !== 12) {
       showToast('Please enter a valid UTR number (12 digits).');
       return;
     }
@@ -288,35 +313,42 @@ const PurchaseView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setLoading(true);
     const path = 'purchases';
     try {
-      const isInstant = final === 0 || useWallet;
+      const isInstant = final === 0;
 
       await addDoc(collection(db, path), {
         userId: user.uid,
         userEmail: user.email,
-        utr: useWallet ? 'WALLET_PAYMENT' : (final > 0 ? utr : 'FREE_COUPON'),
+        utr: final > 0 ? utr : (walletDeduction > 0 ? 'WALLET_PAYMENT' : 'FREE_COUPON'),
         duration: duration === 'custom' ? `custom:${customDays}` : duration,
         price: final,
         originalPrice: original,
         discountApplied: discount,
+        walletDeduction: walletDeduction,
         couponCode: appliedCoupon?.code || null,
         status: isInstant ? 'approved' : 'pending',
         createdAt: serverTimestamp()
       });
 
-      if (useWallet && final > 0) {
+      if (appliedCoupon) {
+        await updateDoc(doc(db, 'coupons', appliedCoupon.id), {
+          claimedBy: arrayUnion(profile.id)
+        });
+      }
+
+      if (walletDeduction > 0) {
         // Deduct from wallet
         await updateDoc(doc(db, 'users', user.uid), {
-          walletBalance: profile.walletBalance - final
+          walletBalance: profile.walletBalance - walletDeduction
         });
         
         // Log transaction
         await addDoc(collection(db, 'transactions'), {
           userId: user.uid,
           userEmail: user.email,
-          type: 'purchase',
-          amount: final,
+          type: 'purchase_deduction',
+          amount: walletDeduction,
           status: 'approved',
-          notes: `Purchased ${duration} plan`,
+          notes: `Paid ₹${walletDeduction} via Wallet for ${duration} plan`,
           createdAt: serverTimestamp()
         });
       }
@@ -730,7 +762,7 @@ const PurchaseView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               </div>
               <div>
                 <div className="text-xs font-bold text-white">Pay with Wallet</div>
-                <div className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest">Balance: ₹{profile.walletBalance} (Get 20% OFF)</div>
+                <div className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest">Balance: ₹{profile.walletBalance}</div>
               </div>
             </div>
             <button 
@@ -749,8 +781,14 @@ const PurchaseView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
           {discount > 0 && (
             <div className="flex justify-between text-sm">
-              <span className="text-emerald-500/60">Total Discount</span>
+              <span className="text-emerald-500/60">Coupon Discount</span>
               <span className="text-emerald-500 font-bold">-₹{discount}</span>
+            </div>
+          )}
+          {walletDeduction > 0 && (
+            <div className="flex justify-between text-sm">
+              <span className="text-emerald-500/60 font-bold">Paid with Wallet</span>
+              <span className="text-emerald-500 font-bold">-₹{walletDeduction}</span>
             </div>
           )}
           <div className="flex justify-between items-center pt-3 border-t border-slate-100 dark:border-white/5">
@@ -761,12 +799,12 @@ const PurchaseView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
         {final > 0 ? (
           <button
-            onClick={() => useWallet ? handlePurchase() : setPaymentStep('payment')}
+            onClick={() => setPaymentStep('payment')}
             disabled={loading}
             className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-2xl shadow-emerald-900/40 uppercase tracking-widest text-sm"
           >
-            {loading ? <Clock className="animate-spin" size={20} /> : (useWallet ? <CheckCircle2 size={20} /> : <ChevronRight size={20} />)}
-            {useWallet ? 'Pay with Wallet' : 'Proceed to Payment'}
+            {loading ? <Clock className="animate-spin" size={20} /> : <ChevronRight size={20} />}
+            Proceed to Payment
           </button>
         ) : (
           <button
@@ -775,7 +813,7 @@ const PurchaseView: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             className="active:scale-95 hover:scale-[1.02] transition-transform w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-800 text-white font-black py-5 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-2xl shadow-emerald-900/40 uppercase tracking-widest text-sm"
           >
             {loading ? <Clock className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
-            Activate Free Access
+            {walletDeduction > 0 ? 'Activate with Wallet' : 'Activate Free Access'}
           </button>
         )}
       </div>
@@ -953,10 +991,10 @@ const ReferralView: React.FC<{
   const shareReferral = () => {
     if (profile?.referralCode) {
       const shareUrl = `${window.location.origin}?ref=${profile.referralCode}`;
-      const text = `Join AI Predictor and get accurate predictions! Use my referral code: ${profile.referralCode}`;
+      const text = `Join Predict Key and get accurate predictions! Use my referral code: ${profile.referralCode}`;
       if (navigator.share) {
         navigator.share({
-          title: 'AI Predictor Referral',
+          title: 'Predict Key Referral',
           text: text,
           url: shareUrl
         });
@@ -1047,7 +1085,11 @@ const ReferralView: React.FC<{
         </div>
         
         <div className="grid gap-4">
-          {REFERRAL_REWARDS.map((reward) => {
+          {REFERRAL_REWARDS.filter((reward, index) => {
+            if (index < 2) return true;
+            const previousReward = REFERRAL_REWARDS[index - 1];
+            return profile?.claimedRewards?.includes(previousReward.id);
+          }).map((reward) => {
             const isClaimed = profile?.claimedRewards?.includes(reward.id);
             const canClaim = (profile?.referralCount || 0) >= reward.count && !isClaimed;
             const progress = Math.min(((profile?.referralCount || 0) / reward.count) * 100, 100);
@@ -1106,8 +1148,8 @@ const ReferralView: React.FC<{
         </div>
         <div className="text-[10px] text-amber-900/60 dark:text-amber-200/40 font-bold uppercase tracking-widest leading-loose">
           <p className="mb-2">• Successful referrals are counted when your link is used to create an account.</p>
-          <p className="mb-2">• Milestone rewards (7 Days Free or ₹500 Bonus) require 3 successful active referrals.</p>
-          <p className="mb-2">• Advanced milestone (₹2,000 Bonus) requires 10 successful active referrals.</p>
+          <p className="mb-2">• First milestone (1 Week Plan + ₹500) requires 3 successful active referrals.</p>
+          <p className="mb-2">• Complete milestones to unlock new, higher-tier referral rewards up to 100 referrals.</p>
           <p>• Exploitation of local network nodes will result in immediate synchronization termination.</p>
         </div>
       </div>
@@ -1139,7 +1181,6 @@ const AdminPanel: React.FC<{
   const [paymentSettings, setPaymentSettings] = useState({ upiId: '', merchantName: '' });
   
   // New Admin States
-  const [vipRequirements, setVipRequirements] = useState<any>({});
   const [giveawaySettings, setGiveawaySettings] = useState<any>({});
   const [spinPrizes, setSpinPrizes] = useState<any[]>([]);
   const [paidSpinPrizes, setPaidSpinPrizes] = useState<any[]>([]);
@@ -1217,7 +1258,19 @@ const AdminPanel: React.FC<{
 
     checkDailyLogin();
   }, [auth.currentUser, profile]);
-  const [newCoupon, setNewCoupon] = useState({ code: '', discountPercent: 10 });
+  const [newCoupon, setNewCoupon] = useState<{
+    code: string;
+    discountPercent: number;
+    targetType: 'all' | 'new_users' | 'specific_user';
+    specificUserEmail: string;
+    maxClaims: string;
+  }>({
+    code: '',
+    discountPercent: 10,
+    targetType: 'all',
+    specificUserEmail: '',
+    maxClaims: ''
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [adminToastMessage, setAdminToastMessage] = useState<string | null>(null);
 
@@ -1434,7 +1487,7 @@ const AdminPanel: React.FC<{
     } else if (activeTab.endsWith('_edit') || activeTab === 'global_config') {
       // Load settings for edit tabs
       const settingsToLoad = [
-        'vip', 'giveaway', 'spin', 'staking', 'analytics', 'purchase', 
+        'giveaway', 'spin', 'staking', 'analytics', 'purchase', 
         'referral', 'leaderboard', 'achievement', 'reward', 'talk', 'app'
       ];
       
@@ -1443,7 +1496,6 @@ const AdminPanel: React.FC<{
           if (snapshot.exists()) {
             const data = snapshot.data();
             switch(settingId) {
-              case 'vip': setVipRequirements(data); break;
               case 'giveaway': setGiveawaySettings(data); break;
               case 'spin': 
                 setSpinPrizes(data.freePrizes || data.prizes || []); 
@@ -1776,9 +1828,19 @@ const AdminPanel: React.FC<{
         code: newCoupon.code.trim().toUpperCase(),
         discountPercent: newCoupon.discountPercent,
         isActive: true,
+        targetType: newCoupon.targetType,
+        specificUserEmail: newCoupon.targetType === 'specific_user' ? newCoupon.specificUserEmail.trim().toLowerCase() : '',
+        maxClaims: newCoupon.maxClaims ? parseInt(newCoupon.maxClaims) : 0,
+        claimedBy: [],
         createdAt: serverTimestamp()
       });
-      setNewCoupon({ code: '', discountPercent: 10 });
+      setNewCoupon({
+        code: '',
+        discountPercent: 10,
+        targetType: 'all',
+        specificUserEmail: '',
+        maxClaims: ''
+      });
     } catch (err) {
       handleFirestoreError(err, OperationType.CREATE, path);
     }
@@ -1927,7 +1989,6 @@ const AdminPanel: React.FC<{
                 { id: 'giveaway', label: 'Giveaway', icon: Trophy, desc: 'Draw daily winners', color: 'text-pink-500 bg-pink-500/10' },
                 { id: 'giveaway_edit', label: 'Giveaway Edit', icon: Trophy, desc: 'Edit giveaway rules', color: 'text-pink-500 bg-pink-500/10' },
                 { id: 'spin_edit', label: 'Spin & Win Edit', icon: Zap, desc: 'Edit prizes & chances', color: 'text-yellow-500 bg-yellow-500/10' },
-                { id: 'vip_edit', label: 'VIP System Edit', icon: Star, desc: 'Edit VIP requirements', color: 'text-purple-500 bg-purple-500/10' },
                 { id: 'staking_edit', label: 'Staking Vault Edit', icon: ShieldCheck, desc: 'Edit staking percentages', color: 'text-teal-500 bg-teal-500/10' },
                 { id: 'purchase_edit', label: 'Purchase Edit', icon: CreditCard, desc: 'Edit plan prices & discounts', color: 'text-blue-500 bg-blue-500/10' },
                 { id: 'referral_edit', label: 'Refer & Earn Edit', icon: Share2, desc: 'Edit referral rewards', color: 'text-green-500 bg-green-500/10' },
@@ -2577,6 +2638,42 @@ const AdminPanel: React.FC<{
                     required
                   />
                 </div>
+                <div>
+                  <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Target Audience</label>
+                  <select
+                    value={newCoupon.targetType}
+                    onChange={(e) => setNewCoupon({ ...newCoupon, targetType: e.target.value as any })}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  >
+                    <option value="all" className="bg-[#151619]">All Users</option>
+                    <option value="new_users" className="bg-[#151619]">New Users Only (Last 7 Days)</option>
+                    <option value="specific_user" className="bg-[#151619]">Specific User</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Claim Limit (First N claims)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newCoupon.maxClaims}
+                    onChange={(e) => setNewCoupon({ ...newCoupon, maxClaims: e.target.value })}
+                    placeholder="Unlimited"
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                  />
+                </div>
+                {newCoupon.targetType === 'specific_user' && (
+                  <div className="sm:col-span-2">
+                    <label className="block text-[10px] font-black text-white/30 uppercase tracking-widest mb-2">Specific User Email</label>
+                    <input
+                      type="email"
+                      value={newCoupon.specificUserEmail}
+                      onChange={(e) => setNewCoupon({ ...newCoupon, specificUserEmail: e.target.value })}
+                      placeholder="E.G. user@example.com"
+                      className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 transition-colors"
+                      required
+                    />
+                  </div>
+                )}
               </div>
               <button
                 type="submit"
@@ -2611,6 +2708,18 @@ const AdminPanel: React.FC<{
                           <span className="text-[10px] text-white/30 block uppercase font-black mb-0.5">Status</span>
                           <span className={`text-[10px] font-black uppercase tracking-widest ${c.isActive ? 'text-emerald-500' : 'text-slate-500'}`}>
                             {c.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                        <div className="bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
+                          <span className="text-[10px] text-white/30 block uppercase font-black mb-0.5">Audience</span>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-[#a855f7]">
+                            {c.targetType === 'new_users' ? 'New Users (Last 7d)' : c.targetType === 'specific_user' ? `Specific (${c.specificUserEmail})` : 'All Users'}
+                          </span>
+                        </div>
+                        <div className="bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
+                          <span className="text-[10px] text-white/30 block uppercase font-black mb-0.5">Claims</span>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">
+                            {(c.claimedBy?.length || 0)} / {c.maxClaims ? c.maxClaims : 'Unlimited'}
                           </span>
                         </div>
                       </div>
@@ -3010,42 +3119,7 @@ const AdminPanel: React.FC<{
           </motion.section>
         )}
         
-        {activeTab === 'vip_edit' && (
-          <motion.section key="vip_edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Star className="text-purple-500" /> VIP System Edit
-            </h3>
-            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
-              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit VIP level requirements.</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {Object.entries(vipRequirements).map(([level, req]: [string, any]) => (
-                  <div key={level} className="bg-slate-50 dark:bg-white/5 p-4 rounded-xl border border-slate-200 dark:border-white/10">
-                    <label className="text-xs font-bold text-slate-500 dark:text-white/40 uppercase tracking-widest mb-2 block">{level}</label>
-                    <input
-                      type="number"
-                      value={req.requirement || ''}
-                      onChange={(e) => setVipRequirements(prev => ({ ...prev, [level]: { ...prev[level], requirement: Number(e.target.value) } }))}
-                      className="w-full bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500"
-                    />
-                  </div>
-                ))}
-              </div>
-              <button
-                onClick={async () => {
-                  try {
-                    await setDoc(doc(db, 'settings', 'vip'), vipRequirements);
-                    adminShowToast('VIP requirements updated!');
-                  } catch (err) {
-                    handleFirestoreError(err, OperationType.WRITE, 'settings/vip');
-                  }
-                }}
-                className="mt-6 w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-xl transition-all"
-              >
-                Save VIP Requirements
-              </button>
-            </div>
-          </motion.section>
-        )}
+
 
         {activeTab === 'giveaway_edit' && (
           <motion.section key="giveaway_edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
@@ -3272,36 +3346,32 @@ const AdminPanel: React.FC<{
         )}
 
         {activeTab === 'staking_edit' && (
-          <motion.section key="staking_edit" className="space-y-6">
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <ShieldCheck className="text-teal-500" /> Staking Vault Edit
-            </h3>
-            <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
-              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit staking percentages.</p>
-            </div>
-          </motion.section>
-        )}
-
-        {activeTab === 'staking_edit' && (
           <motion.section key="staking_edit" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="space-y-6">
             <h3 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <ShieldCheck className="text-teal-500" /> Staking Vault Edit
             </h3>
             <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-2xl p-6 shadow-sm">
-              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit staking percentages.</p>
+              <p className="text-sm text-slate-500 dark:text-white/60 mb-4">Edit daily earning percentage (0.1% to 10%).</p>
               <div className="space-y-4">
-                {Object.entries(stakingVaultSettings).map(([duration, rate]: [string, any]) => (
-                  <div key={duration} className="flex gap-2 items-center">
-                    <span className="text-sm font-bold text-slate-900 dark:text-white w-24">{duration}</span>
-                    <input
-                      type="number"
-                      value={rate || ''}
-                      onChange={(e) => setStakingVaultSettings(prev => ({ ...prev, [duration]: Number(e.target.value) }))}
-                      className="flex-1 bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white"
-                      placeholder="Rate"
-                    />
-                  </div>
-                ))}
+                <div className="flex gap-2 items-center">
+                  <span className="text-sm font-bold text-slate-900 dark:text-white w-32">Daily Rate (%)</span>
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="10"
+                    step="0.1"
+                    value={stakingVaultSettings.dailyRate !== undefined ? (stakingVaultSettings.dailyRate * 100).toFixed(1) : ''}
+                    onChange={(e) => {
+                      let val = parseFloat(e.target.value);
+                      if (isNaN(val)) val = 3;
+                      if (val < 0.1) val = 0.1;
+                      if (val > 10) val = 10;
+                      setStakingVaultSettings(prev => ({ ...prev, dailyRate: val / 100 }));
+                    }}
+                    className="flex-1 bg-white dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-slate-900 dark:text-white"
+                    placeholder="Rate e.g. 3"
+                  />
+                </div>
               </div>
               <button
                 onClick={async () => {
@@ -3511,7 +3581,7 @@ const AdminPanel: React.FC<{
                 <div className="pt-4 border-t border-slate-200 dark:border-white/10">
                   <h4 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Feature Toggles</h4>
                   <div className="space-y-2">
-                    {['referrals', 'vip', 'spinAndWin', 'giveaway', 'leaderboard'].map(feature => (
+                    {['referrals', 'spinAndWin', 'giveaway', 'leaderboard'].map(feature => (
                       <div key={feature} className="flex items-center gap-3">
                         <input
                           type="checkbox"
@@ -5707,7 +5777,7 @@ const ProfileView: React.FC<{
           <p className="text-[10px] text-slate-400 dark:text-white/20 uppercase tracking-widest font-bold mb-3">About</p>
           <div className="bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/10 rounded-2xl p-6">
             <p className="text-xs text-slate-600 dark:text-white/60 leading-relaxed">
-              AI Predictor Pro is a professional prediction tool designed to help you analyze trends and make informed decisions.
+              Predict Key is a professional prediction tool designed to help you analyze trends and make informed decisions.
             </p>
           </div>
         </div>
@@ -6761,7 +6831,7 @@ const ColorGameSelectionView: React.FC<{ onSelect: (wingo: '30s' | '1min' | '3mi
 };
 
 // --- Main Dashboard ---
-type ViewState = 'home' | 'color_prediction' | 'purchase' | 'admin' | 'history' | 'profile' | 'inbox' | 'feedback' | 'referral' | 'wallet' | 'leaderboard' | 'achievements' | 'vip' | 'giveaway' | 'spin' | 'rewards' | 'staking' | 'analytics_user' | 'support' | 'wingo_selection' | 'wingo_master' | 'wingo_predictions' | 'aviator' | 'color_game_selection' | 'game_settings' | 'faq';
+type ViewState = 'home' | 'color_prediction' | 'purchase' | 'admin' | 'history' | 'profile' | 'inbox' | 'feedback' | 'referral' | 'wallet' | 'leaderboard' | 'achievements' | 'giveaway' | 'spin' | 'rewards' | 'staking' | 'analytics_user' | 'support' | 'wingo_selection' | 'wingo_master' | 'wingo_predictions' | 'aviator' | 'color_game_selection' | 'game_settings' | 'faq';
 
 export const Dashboard: React.FC = () => {
   const { profile, isAdmin } = useAuth();
@@ -6860,8 +6930,9 @@ export const Dashboard: React.FC = () => {
 
   const bottomNavItems = [
     { id: 'home', label: 'Home', icon: LayoutDashboard },
-    { id: 'color_game_selection', label: 'WinGo', icon: Palette },
-    { id: 'wallet', label: 'Wallet', icon: Wallet },
+    { id: 'color_game_selection', label: 'Predict', icon: Zap },
+    { id: 'purchase', label: 'Plans', icon: CreditCard },
+    { id: 'referral', label: 'Refer & Earn', icon: Share2 },
     { id: 'profile', label: 'Profile', icon: User },
   ];
 
@@ -6874,20 +6945,17 @@ export const Dashboard: React.FC = () => {
 
   const otherItems = [
     { id: 'wallet', label: 'Wallet', icon: Wallet, color: 'text-emerald-500', desc: 'Secure funds' },
-    { id: 'vip', label: 'VIP System', icon: Award, color: 'text-yellow-400', desc: 'Member benefits' },
     { id: 'giveaway', label: 'Giveaway', icon: Trophy, color: 'text-pink-500', desc: 'Join pools' },
     { id: 'spin', label: 'Spin & Win', icon: RefreshCw, color: 'text-purple-500', desc: 'Daily luck' },
     { id: 'rewards', label: 'Rewards', icon: Gift, color: 'text-pink-500', desc: 'Claim prizes' },
     { id: 'staking', label: 'Staking', icon: ShieldCheck, color: 'text-teal-500', desc: 'Earn passive' },
-    { id: 'analytics_user', label: 'Analytics', icon: TrendingUp, color: 'text-blue-500', desc: 'View stats' },
     { id: 'purchase', label: 'Activation', icon: ShoppingBag, color: 'text-purple-500', desc: 'Get access' },
     { id: 'referral', label: 'Referral', icon: Users, color: 'text-blue-500', desc: 'Earn credits' },
     { id: 'leaderboard', label: 'Leaderboard', icon: Trophy, color: 'text-amber-500', desc: 'Top winners' },
     { id: 'history', label: 'History', icon: Clock, color: 'text-yellow-500', desc: 'Logs' },
     { id: 'achievements', label: 'Achievements', icon: Award, color: 'text-indigo-400', desc: 'Badges' },
     ...(isAdmin ? [
-      { id: 'admin', label: 'Admin', icon: ShieldCheck, color: 'text-orange-500', adminOnly: true, desc: 'Manage' },
-      { id: 'game_settings', label: 'Settings', icon: Wrench, color: 'text-rose-500', adminOnly: true, desc: 'Config' }
+      { id: 'admin', label: 'Admin', icon: ShieldCheck, color: 'text-orange-500', adminOnly: true, desc: 'Manage' }
     ] : [])
   ];
 
@@ -6897,28 +6965,28 @@ export const Dashboard: React.FC = () => {
     return (
       <div className="space-y-8 pb-24">
         {/* Hero Section */}
-        <div className="relative overflow-hidden bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-emerald-500/30">
+        <div className="relative overflow-hidden premium-gradient rounded-[2.5rem] p-8 shadow-2xl shadow-blue-500/10 border border-slate-200 group">
           <div className="relative z-10 flex items-center justify-between">
-            <div className="space-y-4 max-w-[60%]">
-              <div className="inline-flex items-center gap-2 bg-white/10 px-3 py-1 rounded-full border border-white/20">
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-100">AI Active Now</span>
+            <div className="space-y-4 max-w-[65%]">
+              <div className="inline-flex items-center gap-2 bg-white/50 px-3 py-1 rounded-full border border-slate-200 backdrop-blur-md">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-blue-600">AI Core Active</span>
               </div>
               <div className="space-y-1">
-                <h1 className="text-4xl font-black tracking-tight uppercase leading-none">AI PREDICTOR</h1>
-                <p className="text-emerald-100/70 text-xs font-medium leading-relaxed">Experience a new era of accuracy with our neural match insights.</p>
+                <h1 className="text-4xl font-black tracking-tight uppercase leading-none text-slate-900">AI PREDICTOR</h1>
+                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest leading-relaxed">Neural Analytics Engine v4.0</p>
               </div>
               <button 
                 onClick={() => navigateTo('color_game_selection')}
-                className="bg-white text-emerald-700 px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-emerald-50 shadow-xl transition-all active:scale-95 flex items-center gap-2 group"
+                className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-3.5 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/20 transition-all active:scale-95 flex items-center gap-2 group/btn"
               >
-                Start Predicting <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                Start Predictions <ChevronRight size={14} className="group-hover/btn:translate-x-1 transition-transform" />
               </button>
             </div>
             <div className="relative">
-              <div className="absolute inset-0 bg-emerald-400/20 blur-[60px] rounded-full" />
-              <div className="relative bg-white/10 backdrop-blur-md p-4 rounded-3xl border border-white/20">
-                <Bot size={64} className="text-white drop-shadow-2xl" />
+              <div className="absolute inset-0 bg-blue-400/20 blur-[60px] rounded-full" />
+              <div className="relative bg-white/90 backdrop-blur-md p-6 rounded-3xl border border-slate-200 shadow-xl shadow-slate-200/50">
+                <Target size={64} className="text-blue-600 drop-shadow-md" />
               </div>
             </div>
           </div>
@@ -6926,86 +6994,86 @@ export const Dashboard: React.FC = () => {
 
         {/* Plan Status Card */}
         {activePlan ? (
-          <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2.5rem] p-6 shadow-sm overflow-hidden relative group">
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 p-6 shadow-sm overflow-hidden relative group">
             <div className="absolute top-0 right-0 p-4">
-              <div className="bg-emerald-500/10 text-emerald-500 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter">Active Plan</div>
+              <div className="bg-emerald-50 text-emerald-600 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter border border-emerald-100">Active Plan</div>
             </div>
             <div className="flex items-center gap-6">
-              <div className="w-16 h-16 bg-emerald-500/10 rounded-[1.5rem] flex items-center justify-center text-emerald-500">
+              <div className="w-16 h-16 bg-blue-50 rounded-[1.5rem] flex items-center justify-center text-blue-600 border border-blue-100">
                 <Star size={32} />
               </div>
               <div className="flex-1 space-y-1">
-                <h4 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{activePlan.name} Plan</h4>
+                <h4 className="text-xl font-black text-slate-900 uppercase tracking-tight">{activePlan.name} Plan</h4>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">{daysRemaining} Days Left</span>
-                  <span className="text-slate-200 dark:text-white/10">•</span>
-                  <span className="text-[10px] font-bold text-slate-400 dark:text-white/30 uppercase tracking-widest">Expires: {new Date(activePlan.expiresAt).toLocaleDateString()}</span>
+                  <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">{daysRemaining} Days Left</span>
+                  <span className="text-slate-300">•</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Expires: {new Date(activePlan.expiresAt).toLocaleDateString()}</span>
                 </div>
               </div>
               <button 
                 onClick={() => navigateTo('purchase')}
-                className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg"
+                className="bg-slate-900 text-white px-6 py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg"
               >
                 Renew Plan
               </button>
             </div>
           </div>
         ) : (
-          <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2.5rem] p-8 text-center space-y-4">
-            <div className="w-16 h-16 bg-red-500/10 rounded-[1.5rem] flex items-center justify-center text-red-500 mx-auto">
+          <div className="bg-white rounded-[2.5rem] border border-slate-200 p-8 text-center space-y-4 shadow-sm">
+            <div className="w-16 h-16 bg-amber-50 rounded-[1.5rem] flex items-center justify-center text-amber-500 mx-auto border border-amber-100">
               <AlertTriangle size={32} />
             </div>
             <div className="space-y-1">
-              <h4 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">No Active Plan</h4>
-              <p className="text-xs text-slate-500 dark:text-white/40 font-medium">Please subscribe to a plan to start receiving match predictions.</p>
+              <h4 className="text-xl font-black text-slate-900 uppercase tracking-tight">Access Restricted</h4>
+              <p className="text-xs text-slate-500 font-medium">Please activate a prediction channel to start receiving insights.</p>
             </div>
             <button 
               onClick={() => navigateTo('purchase')}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/20 transition-all active:scale-95"
+              className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/20 transition-all active:scale-95"
             >
-              Choose Plan
+              Choose Channel
             </button>
           </div>
         )}
 
         {/* Accuracy Section */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 text-center space-y-2">
-          <p className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest">Today's Accuracy</p>
-          <div className="text-3xl font-black text-emerald-500 tracking-tighter">94.2%</div>
-          <div className="w-full h-1 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
-            <div className="w-[94%] h-full bg-emerald-500 rounded-full" />
+        <div className="bg-white rounded-[2rem] border border-slate-200 p-6 text-center space-y-2 shadow-sm">
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Strike Accuracy</p>
+          <div className="text-3xl font-black text-blue-600 tracking-tighter">94.2%</div>
+          <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+            <div className="w-[94%] h-full bg-blue-500 rounded-full" />
           </div>
         </div>
-        <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 text-center space-y-2">
-          <p className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest">Wallet Balance</p>
-          <div className="text-3xl font-black text-slate-900 dark:text-white tracking-tighter">₹{profile?.walletBalance.toLocaleString() || '0'}</div>
-          <button onClick={() => navigateTo('wallet')} className="text-[10px] font-black text-emerald-500 uppercase tracking-widest flex items-center justify-center gap-1">Topup <ArrowUpRight size={10} /></button>
+        <div className="bg-white rounded-[2rem] border border-slate-200 p-6 text-center space-y-2 shadow-sm">
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Wallet Credits</p>
+          <div className="text-3xl font-black text-slate-900 tracking-tighter">₹{profile?.walletBalance.toLocaleString() || '0'}</div>
+          <button onClick={() => navigateTo('wallet')} className="text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center justify-center gap-1">Recharge <ArrowUpRight size={10} /></button>
         </div>
       </div>
 
       {/* Trending & Bonus Section */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-6 space-y-3">
+        <div className="bg-white border border-slate-200 rounded-[2rem] p-6 space-y-3 shadow-sm">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-orange-500/10 flex items-center justify-center text-orange-500">
+            <div className="w-6 h-6 rounded-lg bg-orange-50 flex items-center justify-center text-orange-500 border border-orange-100">
               <TrendingUp size={14} />
             </div>
-            <p className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-widest">Trending</p>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Trending</p>
           </div>
           <div className="space-y-1">
-            <div className="text-sm font-black text-slate-900 dark:text-white uppercase">Big Series</div>
-            <p className="text-[9px] text-emerald-500 font-black uppercase tracking-widest">78% Prob. Match</p>
+            <div className="text-sm font-black text-slate-900 uppercase">Big Series</div>
+            <p className="text-[9px] text-blue-600 font-black uppercase tracking-widest">78% Prob. Match</p>
           </div>
         </div>
         <button 
-          onClick={() => navigateTo('wallet')} // Daily bonus is often in wallet, or I can add a specific action
-          className="group bg-gradient-to-br from-emerald-500 to-teal-600 rounded-[2rem] p-6 transition-all hover:shadow-lg active:scale-95 text-left relative overflow-hidden"
+          onClick={() => navigateTo('wallet')} 
+          className="group bg-gradient-to-br from-blue-600 to-indigo-600 rounded-[2rem] p-6 transition-all hover:shadow-lg hover:shadow-blue-500/20 active:scale-95 text-left relative overflow-hidden"
         >
           <div className="relative z-10 space-y-1">
-            <p className="text-white/60 text-[10px] font-black uppercase tracking-widest">Daily Bonus</p>
+            <p className="text-blue-100/80 text-[10px] font-black uppercase tracking-widest">Daily Bonus</p>
             <div className="text-lg font-black text-white uppercase">Claim ₹10</div>
-            <div className="flex items-center gap-1 text-[9px] text-white/40 font-bold uppercase tracking-widest group-hover:text-white/80 transition-colors">
+            <div className="flex items-center gap-1 text-[9px] text-blue-200 font-bold uppercase tracking-widest group-hover:text-white transition-colors">
               Available Now <ArrowUpRight size={10} />
             </div>
           </div>
@@ -7016,29 +7084,29 @@ export const Dashboard: React.FC = () => {
       {/* Main Predictions */}
       <div className="space-y-4">
         <div className="flex items-center justify-between px-2">
-          <h3 className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Featured Predictions</h3>
-          <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 rounded-full border border-emerald-500/20">
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Featured Predictions</h3>
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 rounded-full border border-emerald-200">
             <div className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Live Now</span>
+            <span className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Live Now</span>
           </div>
         </div>
         <button 
           onClick={() => navigateTo('color_game_selection')}
-          className="w-full group relative overflow-hidden bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2.5rem] p-8 text-left transition-all hover:border-emerald-500/50 hover:shadow-2xl hover:shadow-emerald-500/5 flex items-center justify-between"
+          className="w-full group relative overflow-hidden bg-white border border-slate-200 rounded-[2.5rem] p-8 text-left shadow-sm transition-all hover:border-blue-300 hover:shadow-xl hover:shadow-blue-500/10 flex items-center justify-between"
         >
           <div className="relative z-10 flex items-center gap-6">
-            <div className="w-16 h-16 rounded-[1.5rem] bg-emerald-500/10 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
-              <Palette size={32} />
+            <div className="w-16 h-16 rounded-[1.5rem] bg-blue-50 flex items-center justify-center text-blue-600 group-hover:scale-110 transition-transform border border-blue-100">
+              <Zap size={32} />
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="block font-black text-xl text-slate-900 dark:text-white uppercase tracking-tight">Color Prediction</span>
+                <span className="block font-black text-xl text-slate-900 uppercase tracking-tight">Main Predictions</span>
                 <Sparkles size={16} className="text-amber-500 animate-pulse" />
               </div>
-              <p className="text-xs text-slate-500 dark:text-white/30 font-medium">Real-time WinGo neural pattern matching.</p>
+              <p className="text-xs text-slate-500 font-medium">Advanced pattern matching engine.</p>
             </div>
           </div>
-          <div className="w-12 h-12 rounded-full border border-slate-100 dark:border-white/5 flex items-center justify-center text-slate-400 group-hover:text-emerald-500 group-hover:bg-emerald-500/10 transition-all">
+          <div className="w-12 h-12 rounded-full border border-slate-100 flex items-center justify-center text-slate-300 group-hover:text-blue-600 group-hover:bg-blue-50 transition-all">
             <ChevronRight size={24} />
           </div>
         </button>
@@ -7047,50 +7115,28 @@ export const Dashboard: React.FC = () => {
       {/* Features Grid */}
       <div className="space-y-4">
         <div className="flex items-center justify-between px-2">
-          <h3 className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Ecosystem Features</h3>
+          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Ecosystem Features</h3>
         </div>
         <div className="grid grid-cols-2 gap-4">
-          {otherItems.filter(item => !item.adminOnly || isAdmin).slice(0, 10).map((item) => (
+          {otherItems.filter(item => !item.adminOnly || isAdmin).map((item) => (
             <button
               key={item.id}
               onClick={() => navigateTo(item.id as any)}
-              className="group bg-white dark:bg-[#151619] border border-slate-200 dark:border-white/10 rounded-[2rem] p-5 flex flex-col items-start gap-4 transition-all hover:border-emerald-500/50 hover:shadow-lg active:scale-95 text-left"
+              className="group bg-white border border-slate-200 rounded-[2rem] p-5 flex flex-col items-start gap-4 shadow-sm transition-all hover:border-blue-300 hover:shadow-lg active:scale-95 text-left"
             >
-              <div className={`w-10 h-10 rounded-2xl bg-white/5 dark:bg-white/5 flex items-center justify-center ${item.color} group-hover:scale-110 transition-transform`}>
+              <div className={`w-10 h-10 rounded-2xl bg-slate-50 flex items-center justify-center ${item.color} border border-slate-100 group-hover:scale-110 transition-transform`}>
                 <item.icon size={20} />
               </div>
               <div>
-                <span className="block text-[13px] font-black text-slate-900 dark:text-white uppercase tracking-tight mb-1">{item.label}</span>
-                <p className="text-[9px] font-bold text-slate-400 dark:text-white/20 uppercase tracking-widest">{item.desc}</p>
+                <span className="block text-[13px] font-black text-slate-900 uppercase tracking-tight mb-1">{item.label}</span>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{item.desc}</p>
               </div>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Recent Activity */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between px-2">
-          <h3 className="text-[10px] font-black text-slate-400 dark:text-white/30 uppercase tracking-[0.2em]">Recent Viral Results</h3>
-        </div>
-        <div className="bg-[#151619] border border-white/5 rounded-[2.5rem] p-6 divide-y divide-white/5">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="py-4 flex items-center justify-between first:pt-0 last:pb-0">
-              <div className="flex items-center gap-3">
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                <div>
-                  <p className="text-xs font-black text-white uppercase tracking-tight">Period #{(928 + i)} Result</p>
-                  <p className="text-[9px] text-white/30 font-bold uppercase tracking-widest">Matched neural pattern "Big"</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs font-black text-emerald-500 uppercase">Success</div>
-                <div className="text-[9px] text-white/20 font-bold uppercase tracking-widest">2m ago</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+
 
       {/* Responsible Gaming */}
       <div className="bg-slate-100 dark:bg-white/5 p-8 rounded-[2.5rem] border border-slate-200 dark:border-white/10 text-center space-y-4">
@@ -7105,23 +7151,29 @@ export const Dashboard: React.FC = () => {
 };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#0a0a0a] text-slate-900 dark:text-white transition-colors duration-500">
-      <header className="fixed top-0 left-0 right-0 h-20 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-2xl border-b border-slate-200 dark:border-white/5 z-50 transition-all">
+    <div className="min-h-screen bg-slate-50 text-slate-900 transition-colors duration-500 selection:bg-blue-500/30 overflow-x-hidden">
+      {/* Background atmosphere */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-50 blur-[120px] rounded-full -translate-y-1/2 translate-x-1/3" />
+        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-indigo-50 blur-[120px] rounded-full translate-y-1/2 -translate-x-1/3" />
+      </div>
+
+      <header className="fixed top-0 left-0 right-0 h-20 glass-card border-b border-slate-200 z-50 transition-all backdrop-blur-3xl">
         <div className="max-w-4xl mx-auto px-6 h-full flex items-center justify-between">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => navigateTo('home')}>
-            <div className="w-10 h-10 bg-emerald-500 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
-              <Sparkles size={20} className="animate-pulse" />
+            <div className="w-10 h-10 bg-yellow-500 text-slate-900 rounded-2xl flex items-center justify-center shadow-lg shadow-yellow-500/30">
+              <Key size={20} className="fill-yellow-600 text-slate-950" />
             </div>
             <div>
-              <span className="block font-black tracking-tighter text-lg uppercase text-slate-900 dark:text-white italic">AI Predictor</span>
-              <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest text-center">Neural Output</span>
+              <span className="block font-black tracking-tighter text-lg uppercase text-slate-900 italic premium-text">Predict Key</span>
+              <span className="block text-[8px] font-black text-slate-500 uppercase tracking-widest text-center">Neural Engine v5</span>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
             <button 
               onClick={() => navigateTo('profile')}
-              className="w-10 h-10 flex items-center justify-center bg-slate-100 dark:bg-white/5 rounded-2xl text-slate-400 dark:text-white/40 hover:text-emerald-500 transition-all"
+              className="w-10 h-10 flex items-center justify-center bg-white border border-slate-200 shadow-sm rounded-2xl text-slate-500 hover:text-blue-600 hover:bg-slate-50 transition-all"
             >
               <User size={20} />
             </button>
@@ -7414,11 +7466,7 @@ export const Dashboard: React.FC = () => {
             </motion.div>
           )}
 
-          {view === 'vip' && (
-            <motion.div key="vip" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <VIPView profile={profile} onBack={() => navigateTo('home')} showToast={showToast} />
-            </motion.div>
-          )}
+
 
           {view === 'giveaway' && (
             <motion.div key="giveaway" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
@@ -7459,35 +7507,37 @@ export const Dashboard: React.FC = () => {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 px-6 pb-8 bg-transparent pointer-events-none z-50">
-        <div className="max-w-md mx-auto h-20 bg-white/80 dark:bg-[#151619]/90 backdrop-blur-2xl border border-slate-200 dark:border-white/10 rounded-[2.5rem] shadow-2xl flex items-center justify-around px-4 pointer-events-auto">
+      <nav className="fixed bottom-0 left-0 right-0 px-4 pb-6 bg-transparent pointer-events-none z-50">
+        <div className="max-w-md mx-auto h-20 glass-card rounded-[2.5rem] flex items-center justify-around px-4 pointer-events-auto">
           {bottomNavItems.map((item) => {
             const isActive = view === item.id || (item.id === 'color_game_selection' && (view === 'wingo_selection' || view === 'wingo_master' || view === 'wingo_predictions'));
             return (
               <button
                 key={item.id}
                 onClick={() => navigateTo(item.id as any)}
-                className={`group relative flex flex-col items-center justify-center w-16 h-16 transition-all ${
-                  isActive ? 'text-emerald-500' : 'text-slate-400 dark:text-white/30'
+                className={`group relative flex flex-col items-center justify-center w-14 h-14 transition-all ${
+                  isActive ? 'text-blue-600' : 'text-slate-400'
                 }`}
               >
                 {isActive && (
                   <motion.div 
                     layoutId="activePill"
-                    className="absolute inset-0 bg-emerald-500/10 rounded-2xl -z-10"
+                    className="absolute inset-0 bg-blue-50 rounded-2xl -z-10 shadow-sm"
                     transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
                   />
                 )}
-                <item.icon size={22} className={`transition-transform duration-300 ${isActive ? 'scale-110 -translate-y-1' : 'group-hover:scale-110'}`} />
-                <span className={`text-[8px] font-black uppercase tracking-[0.2em] transition-all ${isActive ? 'opacity-100 translate-y-0.5' : 'opacity-0 translate-y-2'}`}>
+                <item.icon size={20} className={`transition-transform duration-300 ${isActive ? 'scale-110 -translate-y-1 drop-shadow-md' : 'group-hover:scale-110'}`} />
+                <span className={`text-[7px] font-black uppercase tracking-[0.1em] transition-all whitespace-nowrap ${isActive ? 'opacity-100 translate-y-0.5' : 'opacity-0 translate-y-2'}`}>
                   {item.label}
                 </span>
+                {isActive && (
+                   <div className="absolute -bottom-1 w-1 h-1 bg-blue-600 rounded-full" />
+                )}
               </button>
             );
           })}
         </div>
       </nav>
-
       <AnimatePresence>
         {toastMessage && (
           <motion.div

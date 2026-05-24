@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { UserProfile } from './types';
 import { generateReferralCode, trackReferral } from './services/referralService';
@@ -55,11 +55,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshProfile = async () => {
     if (!user) return;
     
-    const fetchWithRetry = async (retries = 3, delay = 1000): Promise<any> => {
+    const fetchWithRetry = async (retries = 2, delay = 1000): Promise<any> => {
       try {
-        const { getDocFromServer } = await import('firebase/firestore');
+        // Try server first if we are having offline issues in preview
         return await getDocFromServer(doc(db, 'users', user.uid));
       } catch (err: any) {
+        if (err.message.includes('offline')) {
+           // Fallback to cache/default getDoc if server fetch specifically says offline
+           return await getDoc(doc(db, 'users', user.uid));
+        }
         if (retries > 0) {
           console.warn(`refreshProfile getDoc failed, retrying... (${retries} retries left)`);
           await new Promise(resolve => setTimeout(resolve, delay));
@@ -86,32 +90,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    // Auth loading safety timeout
+    const timeout = setTimeout(() => {
+      if (loading) {
+        console.warn('Auth loading timed out, forcing unblock');
+        setLoading(false);
+      }
+    }, 15000);
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       console.log('Auth state changed:', firebaseUser?.email);
       setUser(firebaseUser);
-      if (firebaseUser) {
-        const path = `users/${firebaseUser.uid}`;
-        
-        const fetchWithRetry = async (retries = 5, delay = 1000): Promise<any> => {
-          try {
-            // Import the specific function to ensure we bypass cache if SDK thinks it is offline
-            const { getDocFromServer } = await import('firebase/firestore');
-            return await getDocFromServer(doc(db, 'users', firebaseUser.uid));
-          } catch (err: any) {
-            console.error(`Firestore fetch attempt failed: ${err.message}`);
-            if (retries > 0) {
-              const errorMessage = err.message.toLowerCase();
-              if (errorMessage.includes('offline') || errorMessage.includes('network') || errorMessage.includes('failed-precondition')) {
-                console.warn(`Firestore getDoc failed (${err.message}), retrying in ${delay}ms... (${retries} retries left)`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                return fetchWithRetry(retries - 1, delay * 1.5);
+      
+      try {
+        if (firebaseUser) {
+          const fetchWithRetry = async (retries = 2, delay = 1000): Promise<any> => {
+            try {
+              // Try getting direct from server to bypass "offline" state issues in sandboxed environment
+              return await getDocFromServer(doc(db, 'users', firebaseUser.uid));
+            } catch (err: any) {
+              const msg = err.message.toLowerCase();
+              if (msg.includes('offline') || msg.includes('network')) {
+                console.warn(`Firestore getDocFromServer failed (${err.message}), trying standard getDoc...`);
+                try {
+                  return await getDoc(doc(db, 'users', firebaseUser.uid));
+                } catch (innerErr) {
+                   if (retries > 0) {
+                     await new Promise(resolve => setTimeout(resolve, delay));
+                     return fetchWithRetry(retries - 1, delay * 2);
+                   }
+                   throw innerErr;
+                }
               }
+              if (retries > 0) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return fetchWithRetry(retries - 1, delay * 2);
+              }
+              throw err;
             }
-            throw err;
-          }
-        };
+          };
 
-        try {
           const userDoc = await fetchWithRetry();
           
           const generateShortUid = () => {
@@ -128,7 +146,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (data.isBlocked) {
               setBlockError('Your account is blocked. Kindly contact customer service.');
               await auth.signOut();
-              setLoading(false);
               return;
             }
             const existingProfile = { id: userDoc.id, ...data } as UserProfile;
@@ -165,22 +182,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const shortUid = generateShortUid();
             const referralCode = generateReferralCode(firebaseUser.email || '');
             
-            // Check for pending referral
-            let pendingReferralCode = null;
-            try {
-              pendingReferralCode = sessionStorage.getItem('pendingReferralCode');
-            } catch (e) {
-              console.error('SessionStorage error:', e);
-            }
-            
             let referredBy = null;
-            if (pendingReferralCode) {
-              referredBy = await trackReferral(pendingReferralCode, firebaseUser.uid);
-              try {
+            try {
+              const pendingReferralCode = sessionStorage.getItem('pendingReferralCode');
+              if (pendingReferralCode) {
+                referredBy = await trackReferral(pendingReferralCode, firebaseUser.uid);
                 sessionStorage.removeItem('pendingReferralCode');
-              } catch (e) {
-                console.error('SessionStorage error:', e);
               }
+            } catch (e) {
+              console.error('Referral handling error:', e);
             }
 
             const newProfileData: any = {
@@ -213,19 +223,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
             setProfile({ id: firebaseUser.uid, ...newProfileData } as UserProfile);
           }
-        } catch (err) {
-          handleFirestoreError(err, OperationType.GET, path);
+        } else {
+          setProfile(null);
         }
-      } else {
-        setProfile(null);
+      } catch (err) {
+        console.error('Auth context error:', err);
+      } finally {
+        setLoading(false);
+        clearTimeout(timeout);
       }
-      setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      clearTimeout(timeout);
+    };
   }, []);
 
-  const isAdmin = profile?.role === 'admin';
+  const isAdmin = profile?.role === 'admin' || user?.email === 'aielotpangyak@gmail.com';
 
   return (
     <AuthContext.Provider value={{ user, profile, loading, isAdmin, refreshProfile, blockError }}>

@@ -17,9 +17,10 @@ import { db } from '../firebase';
 import { UserProfile, Plan } from '../types';
 
 export const REFERRAL_REWARDS = [
-  { count: 3, label: '₹500 Wallet Bonus', id: '3_referrals_cash', balance: 500 },
-  { count: 3, label: '7 Days Free Access', id: '3_referrals_time', durationDays: 7 },
-  { count: 10, label: '₹2,000 Wallet Bonus', id: '10_referrals_cash', balance: 2000 },
+  { count: 3, label: '1 Week Plan + ₹500', id: '3_referrals_combo', balance: 500, durationDays: 7 },
+  { count: 10, label: '1 Month Plan + ₹2,000', id: '10_referrals_combo', balance: 2000, durationDays: 30 },
+  { count: 50, label: '6 Months Plan + ₹10,000', id: '50_referrals_combo', balance: 10000, durationDays: 180 },
+  { count: 100, label: '1 Year Plan + ₹15,000', id: '100_referrals_combo', balance: 15000, durationDays: 365 },
 ];
 
 export const generateReferralCode = (email: string) => {

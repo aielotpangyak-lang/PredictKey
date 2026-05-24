@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
-type Theme = 'light' | 'dark';
+type Theme = 'light';
 
 interface ThemeContextType {
   theme: Theme;
@@ -10,30 +10,15 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    return 'dark';
-  });
+  const [theme] = useState<Theme>('light');
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = () => setTheme(mediaQuery.matches ? 'dark' : 'light');
-    
-    mediaQuery.addEventListener('change', handleChange);
-    
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [theme]);
+    document.documentElement.classList.remove('dark');
+    document.documentElement.classList.add('light');
+  }, []);
 
   const toggleTheme = () => {
-    // Manual toggle disabled - following system theme
+    // Forced light theme
   };
 
   return (
@@ -50,3 +35,4 @@ export const useTheme = () => {
   }
   return context;
 };
+

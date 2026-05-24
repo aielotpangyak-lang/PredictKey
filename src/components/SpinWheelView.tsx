@@ -72,11 +72,9 @@ const SpinWheelView: React.FC<SpinWheelViewProps> = ({ profile, onBack, showToas
   }
 
   const freePrizes: Prize[] = [
-    { label: 'Try Again', color: 'bg-slate-500', chance: 45, type: 'none' },
-    { label: '₹2', color: 'bg-blue-500', chance: 50, type: 'wallet', amount: 2 },
-    { label: '1 Week Pro', color: 'bg-indigo-500', chance: 4.9, type: 'plan', duration: '1w' },
-    { label: '₹2000', color: 'bg-purple-500', chance: 0.09, type: 'wallet', amount: 2000 },
-    { label: '₹5000', color: 'bg-emerald-500', chance: 0.01, type: 'wallet', amount: 5000 },
+    { label: 'Try Again', color: 'bg-slate-500', chance: 50, type: 'none' },
+    { label: 'Missed', color: 'bg-blue-500', chance: 40, type: 'none' },
+    { label: 'Almost', color: 'bg-indigo-500', chance: 10, type: 'none' }
   ];
 
   const paidPrizes: Prize[] = [
@@ -88,9 +86,12 @@ const SpinWheelView: React.FC<SpinWheelViewProps> = ({ profile, onBack, showToas
     { label: 'Ola S1 Pro', color: 'bg-pink-600', chance: 0.02, type: 'physical', item: 'Ola S1 Pro' },
   ];
 
-  const activePrizes = spinMode === 'free' 
-    ? (prizes.free.length > 0 ? prizes.free : freePrizes)
-    : (prizes.paid.length > 0 ? prizes.paid : paidPrizes);
+  // Force free prizes to never yield wallet items, even if misconfigured in DB
+  let activeFreePrizes = (prizes.free.length > 0 ? prizes.free : freePrizes).map(p => 
+    p.type === 'wallet' ? { ...p, type: 'none' as const, label: 'Try Again', amount: 0 } : p
+  );
+
+  const activePrizes = spinMode === 'free' ? activeFreePrizes : (prizes.paid.length > 0 ? prizes.paid : paidPrizes);
 
   if (loading) {
     return (
@@ -263,42 +264,45 @@ const SpinWheelView: React.FC<SpinWheelViewProps> = ({ profile, onBack, showToas
           </p>
         </div>
 
-        <div className="relative w-64 h-64 md:w-80 md:h-80 mb-12 z-10">
+        <div className="relative w-64 h-64 md:w-80 md:h-80 mb-12 z-10 my-4">
           {/* Pointer */}
-          <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-8 h-8 bg-slate-900 dark:bg-white rotate-45 z-20 shadow-lg border-b-4 border-r-4 border-slate-800 dark:border-slate-200 rounded-sm"></div>
+          <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-8 h-8 bg-slate-900 dark:bg-white rotate-45 z-30 shadow-lg border-b-4 border-r-4 border-slate-800 dark:border-slate-200 rounded-sm"></div>
           
-          {/* Wheel */}
-          <motion.div 
-            className="w-full h-full rounded-full border-8 border-slate-900 dark:border-white shadow-2xl overflow-hidden relative"
-            animate={{ rotate: rotation }}
-            transition={{ duration: 5, ease: [0.2, 0.8, 0.2, 1] }}
-          >
-            {activePrizes.map((prize, index) => {
-              const angle = (360 / activePrizes.length) * index;
-              return (
-                <div 
-                  key={index}
-                  className={`absolute top-0 left-0 w-full h-full origin-center ${prize.color}`}
-                  style={{
-                    clipPath: `polygon(50% 50%, 50% 0%, ${50 + 50 * Math.sin(2 * Math.PI / activePrizes.length)}% ${50 - 50 * Math.cos(2 * Math.PI / activePrizes.length)}%)`,
-                    transform: `rotate(${angle}deg)`
-                  }}
-                >
-                  <div className="absolute top-8 right-8 text-white font-black text-sm md:text-lg rotate-45 origin-bottom-left">
-                    {prize.label}
+          {/* Outer Wheel Ring */}
+          <div className="absolute -inset-4 md:-inset-6 rounded-full border-[12px] border-yellow-400 dark:border-yellow-500 shadow-[0_0_50px_rgba(250,204,21,0.5)] flex items-center justify-center bg-slate-900 dark:bg-black z-10">
+            {/* Inner Wheel (Actually rotates) */}
+            <motion.div 
+              className="w-full h-full rounded-full border-4 border-white dark:border-slate-800 shadow-inner overflow-hidden relative"
+              animate={{ rotate: rotation }}
+              transition={{ duration: 5, ease: [0.2, 0.8, 0.2, 1] }}
+            >
+              {activePrizes.map((prize, index) => {
+                const angle = (360 / activePrizes.length) * index;
+                return (
+                  <div 
+                    key={index}
+                    className={`absolute top-0 left-0 w-full h-full origin-center ${prize.color}`}
+                    style={{
+                      clipPath: `polygon(50% 50%, 50% 0%, ${50 + 50 * Math.sin(2 * Math.PI / activePrizes.length)}% ${50 - 50 * Math.cos(2 * Math.PI / activePrizes.length)}%)`,
+                      transform: `rotate(${angle}deg)`
+                    }}
+                  >
+                    <div className="absolute top-8 right-8 text-white font-black text-[10px] md:text-sm rotate-[70deg] origin-bottom-left whitespace-nowrap">
+                      {prize.label}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </motion.div>
+                );
+              })}
+            </motion.div>
+          </div>
           
           {/* Center Hub */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-slate-900 dark:bg-white rounded-full z-20 border-4 border-slate-800 dark:border-slate-200 shadow-inner flex items-center justify-center">
-            <Gift className="text-white dark:text-slate-900" size={24} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-slate-900 dark:bg-white rounded-full z-30 border-4 border-yellow-400 dark:border-yellow-500 shadow-[0_0_20px_rgba(0,0,0,0.5)] flex items-center justify-center">
+            <Gift className="text-yellow-400 dark:text-yellow-500" size={24} />
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 w-full max-w-xs z-10">
+        <div className="flex flex-col gap-4 w-full max-w-xs z-10 mt-10">
           <button
             onClick={handleSpin}
             disabled={isSpinning || (spinMode === 'free' ? freeSpinsLeft <= 0 : profile.walletBalance < 50)}
@@ -316,10 +320,10 @@ const SpinWheelView: React.FC<SpinWheelViewProps> = ({ profile, onBack, showToas
           <motion.div 
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
-            className={`mt-8 p-6 rounded-2xl text-center z-10 w-full max-w-sm ${result === 'Try Again' ? 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-white/60' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'}`}
+            className={`mt-6 p-6 rounded-2xl text-center z-10 w-full max-w-sm ${result === 'Try Again' || result === 'Missed' || result === 'Almost' ? 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-white/60' : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'}`}
           >
-            <h4 className="text-2xl font-black mb-1">{result === 'Try Again' ? 'Better luck next time!' : 'Congratulations!'}</h4>
-            <p className="text-sm opacity-80">{result === 'Try Again' ? 'Try again for better rewards.' : `You won ${result}.`}</p>
+            <h4 className="text-2xl font-black mb-1">{result === 'Try Again' || result === 'Missed' || result === 'Almost' ? 'Better luck next time!' : 'Congratulations!'}</h4>
+            <p className="text-sm opacity-80">{result === 'Try Again' || result === 'Missed' || result === 'Almost' ? 'Try again for better rewards.' : `You won ${result}.`}</p>
           </motion.div>
         )}
         

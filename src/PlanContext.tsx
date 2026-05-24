@@ -30,7 +30,14 @@ export const PlanProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
         const planData = snapshot.docs[0].data() as Plan;
-        setActivePlan({ id: snapshot.docs[0].id, ...planData });
+        if (new Date(planData.expiresAt) < new Date()) {
+          import('firebase/firestore').then(({ updateDoc, doc }) => {
+            updateDoc(doc(db, 'plans', snapshot.docs[0].id), { isActive: false }).catch(console.error);
+          });
+          setActivePlan(null);
+        } else {
+          setActivePlan({ id: snapshot.docs[0].id, ...planData });
+        }
       } else {
         setActivePlan(null);
       }

@@ -144,7 +144,7 @@ export const Auth: React.FC = () => {
             {view === 'login' ? 'Welcome Back' : view === 'register' ? 'Create Account' : view === 'otp' ? 'Verify Email' : 'Reset Password'}
           </h1>
           <p className="text-slate-500 dark:text-white/50 text-sm">
-            {view === 'login' ? 'Sign in to access your dashboard' : view === 'register' ? 'Join AI Predictor Pro today' : view === 'otp' ? 'Enter the 6-digit code sent to your email' : 'Enter your email to receive a reset link'}
+            {view === 'login' ? 'Sign in to access your dashboard' : view === 'register' ? 'Join Predict Key today' : view === 'otp' ? 'Enter the 6-digit code sent to your email' : 'Enter your email to receive a reset link'}
           </p>
         </div>
 

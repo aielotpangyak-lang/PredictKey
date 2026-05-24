@@ -6,14 +6,12 @@ import firebaseConfig from '../firebase-applet-config.json';
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-// Enable Firestore debug logging to help diagnose connectivity issues in the preview environment
-setLogLevel('debug');
-
 // Initialize Firestore with settings to handle potential network issues in preview environment
+// We use the firestoreDatabaseId from the config if provided, otherwise default to '(default)'
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
   ignoreUndefinedProperties: true,
-});
+}, (firebaseConfig as any).firestoreDatabaseId || '(default)');
 
 // Test connection silently and don't throw blocking errors
-console.log('[FIREBASE] Initialized with forced long polling and debug logging.');
+console.log('[FIREBASE] Initialized with forced long polling.');

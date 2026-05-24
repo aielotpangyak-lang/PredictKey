@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { ShieldCheck, ChevronLeft, Calculator, Lock, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { UserProfile } from '../types';
 import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp, doc, updateDoc, getDoc, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc, getDoc, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 
 interface StakingViewProps {
   profile: UserProfile;
@@ -20,7 +20,18 @@ const StakingView: React.FC<StakingViewProps> = ({ profile, onBack, showToast })
   const [totalStaked, setTotalStaked] = useState(0);
   const [totalEarned, setTotalEarned] = useState(0);
 
-  const dailyRate = 0.03; // 3% per day
+  const [stakingSettings, setStakingSettings] = useState<{ dailyRate: number }>({ dailyRate: 0.03 });
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'staking'), (doc) => {
+      if (doc.exists() && doc.data().dailyRate !== undefined) {
+        setStakingSettings({ dailyRate: doc.data().dailyRate });
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const dailyRate = stakingSettings.dailyRate;
   const days = duration === 1 ? 30 : duration === 6 ? 180 : 365;
   const projectedReturn = Number(amount) * Math.pow(1 + dailyRate, days);
   const profit = projectedReturn - Number(amount);
@@ -29,14 +40,49 @@ const StakingView: React.FC<StakingViewProps> = ({ profile, onBack, showToast })
     const syncStakes = async () => {
       if (!profile?.id) return;
       try {
-        const response = await fetch('/api/staking/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: profile.id })
-        });
-        const data = await response.json();
-        if (data.returned > 0) {
-          showToast(`₹${data.returned.toFixed(2)} returned to your wallet from matured stakes!`);
+        const now = new Date();
+        const stakesQuery = query(
+          collection(db, 'stakes'), 
+          where('userId', '==', profile.id),
+          where('status', '==', 'active')
+        );
+        const stakesSnapshot = await getDocs(stakesQuery);
+        
+        if (stakesSnapshot.empty) return;
+
+        let totalReturned = 0;
+        // writeBatch imported from firebase/firestore? we need to use it. Or we can just run sequential because it's client side. But the rule says transactions. Let me use regular sequential updates to be safe from missing batch imports.
+        
+        const maturedDocs = stakesSnapshot.docs.filter(docSnap => now >= docSnap.data().endDate.toDate());
+        
+        for (const docSnap of maturedDocs) {
+          const data = docSnap.data();
+          const pDays = data.durationMonths === 1 ? 30 : data.durationMonths === 6 ? 180 : 365;
+          const returnAmount = data.amount * Math.pow(1 + data.dailyRate, pDays);
+          
+          totalReturned += returnAmount;
+
+          await updateDoc(docSnap.ref, { status: 'completed', returnedAmount: returnAmount });
+
+          await addDoc(collection(db, 'transactions'), {
+            userId: profile.id,
+            type: 'deposit',
+            amount: returnAmount,
+            status: 'approved',
+            notes: `Staking Return (Principal + Interest) - ${data.durationMonths}m`,
+            createdAt: serverTimestamp()
+          });
+        }
+
+        if (totalReturned > 0) {
+          const userRef = doc(db, 'users', profile.id);
+          const userDoc = await getDoc(userRef);
+          const currentBal = userDoc.data()?.walletBalance || 0;
+          await updateDoc(userRef, {
+            walletBalance: currentBal + totalReturned
+          });
+          
+          showToast(`₹${totalReturned.toFixed(2)} returned to your wallet from matured stakes!`);
         }
       } catch (err) {
         console.error("Error syncing stakes:", err);
@@ -45,9 +91,9 @@ const StakingView: React.FC<StakingViewProps> = ({ profile, onBack, showToast })
     syncStakes();
 
     const fetchStakes = async () => {
-      if (!profile?.uid) return;
+      if (!profile?.id) return;
       try {
-        const q = query(collection(db, 'stakes'), where('userId', '==', profile.uid));
+        const q = query(collection(db, 'stakes'), where('userId', '==', profile.id));
         const querySnapshot = await getDocs(q);
         let staked = 0;
         let earned = 0;
@@ -67,7 +113,7 @@ const StakingView: React.FC<StakingViewProps> = ({ profile, onBack, showToast })
       }
     };
     fetchStakes();
-  }, [profile?.uid]);
+  }, [profile?.id, dailyRate]);
 
   const handleStake = async () => {
     if (!amount || Number(amount) <= 0) {
@@ -84,7 +130,7 @@ const StakingView: React.FC<StakingViewProps> = ({ profile, onBack, showToast })
     
     try {
       // Deduct from wallet
-      const userRef = doc(db, 'users', profile.uid);
+      const userRef = doc(db, 'users', profile.id);
       const userDoc = await getDoc(userRef);
       const currentBalance = userDoc.data()?.walletBalance || 0;
       
@@ -94,7 +140,7 @@ const StakingView: React.FC<StakingViewProps> = ({ profile, onBack, showToast })
 
       // Add stake record
       await addDoc(collection(db, 'stakes'), {
-        userId: profile.uid,
+        userId: profile.id,
         amount: Number(amount),
         durationMonths: duration,
         dailyRate: dailyRate,
@@ -127,7 +173,7 @@ const StakingView: React.FC<StakingViewProps> = ({ profile, onBack, showToast })
 
       <div className="bg-gradient-to-br from-teal-500 to-emerald-600 rounded-3xl p-8 text-white shadow-xl shadow-teal-500/20 relative overflow-hidden">
         <div className="relative z-10">
-          <h3 className="text-3xl font-black mb-2">Earn 3% Daily</h3>
+          <h3 className="text-3xl font-black mb-2">Earn {(dailyRate * 100).toFixed(1)}% Daily</h3>
           <p className="text-white/80 mb-6">Lock your balance and watch it grow automatically.</p>
           
           <div className="grid grid-cols-2 gap-4">
@@ -226,7 +272,7 @@ const StakingView: React.FC<StakingViewProps> = ({ profile, onBack, showToast })
             </div>
             
             <p className="text-xs text-slate-500 dark:text-white/40 text-center">
-              *Projections are based on a fixed 3% daily compound interest rate. Withdrawals are locked until the duration ends.
+              *Projections are based on a fixed {(dailyRate * 100).toFixed(1)}% daily compound interest rate. Withdrawals are locked until the duration ends.
             </p>
           </div>
         </div>

@@ -25,24 +25,20 @@ async function startServer() {
     console.log('Config loaded for project:', firebaseConfig.projectId);
 
     if (getApps().length === 0) {
-      console.log('Initializing Firebase Admin...');
-      console.log('Environment Variables:');
-      console.log('GOOGLE_CLOUD_PROJECT:', process.env.GOOGLE_CLOUD_PROJECT);
-      console.log('FIREBASE_CONFIG:', process.env.FIREBASE_CONFIG);
-      console.log('GOOGLE_APPLICATION_CREDENTIALS:', process.env.GOOGLE_APPLICATION_CREDENTIALS ? 'SET' : 'NOT SET');
-      
+      console.log('Initializing Firebase Admin with config projectId...');
       try {
-        initializeApp(); // Try auto-initialization first
-        console.log(`Firebase Admin initialized with environment defaults`);
+        initializeApp({
+          projectId: firebaseConfig.projectId
+        });
+        console.log(`Firebase Admin initialized with project ID: ${firebaseConfig.projectId}`);
       } catch (e) {
-        console.log('Auto-initialization failed, trying with config projectId...');
+        console.error('Firebase Admin initialization failed:', e);
+        // Fallback to auto-init only if explicit init failed
         try {
-          initializeApp({
-            projectId: firebaseConfig.projectId
-          });
-          console.log(`Firebase Admin initialized with project ID: ${firebaseConfig.projectId}`);
+          initializeApp();
+          console.log(`Firebase Admin initialized with environment defaults`);
         } catch (e2) {
-          console.error('Firebase Admin initialization failed:', e2);
+          console.error('Environment default init also failed:', e2);
         }
       }
     }
@@ -68,30 +64,10 @@ async function startServer() {
       db = getFirestore(firebaseAdminApp);
     }
     
-    // Startup check for Firestore connectivity
-    try {
-      console.log('[STARTUP] Testing Firestore connectivity (collection: settings)...');
-      // Try to get a specific document instead of listing collection (Admin SDK list can be more restricted in some environments?)
-      const testRef = db.collection('settings').doc('admin');
-      const testSnap = await testRef.get();
-      console.log(`[STARTUP] Firestore check successful. Document exists: ${testSnap.exists}`);
-    } catch (err: any) {
-      console.error('[STARTUP] Firestore connectivity test failed:', err.message, 'Code:', err.code);
-      if (err.code === 7 || err.code === 5 || err.message.toLowerCase().includes('permission') || err.message.toLowerCase().includes('not found') || err.message.includes('NOT_FOUND')) {
-        console.warn('[STARTUP] Falling back to default Firestore database due to error...');
-        try {
-          const fallbackDb = getFirestore(firebaseAdminApp);
-          await fallbackDb.collection('settings').limit(1).get();
-          db = fallbackDb;
-          console.log('[STARTUP] Fallback Firestore (default) connected successfully.');
-        } catch (fallbackErr: any) {
-          console.error('[STARTUP] Fallback Firestore also failed:', fallbackErr.message);
-          // Last ditch effort: try to initialize with NO projectId (let it infer from environment)
-          console.warn('[STARTUP] Last ditch effort: Try to use environment defaults...');
-        }
-      }
-    }
-
+    // IF there's no auth/service account, Firebase Admin will attempt to use default compute credentials 
+    // which won't work in AI Studio to connect to the user's project, so we skip startup check
+    // to avoid falling back to the wrong database automatically.
+    
     app.use(express.json());
 
     // Request logging
