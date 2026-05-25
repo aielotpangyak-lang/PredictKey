@@ -53,15 +53,21 @@ async function startServer() {
 
     // If the databaseId is the same as the projectId, we should use the default database instance.
     // Otherwise, use the named instance.
-    let db;
+    let db: any = null;
     try {
       db = (configDatabaseId === currentProjectId || !configDatabaseId)
         ? getFirestore(firebaseAdminApp)
         : getFirestore(firebaseAdminApp, configDatabaseId);
       console.log(`Firestore instance obtained for Project: ${currentProjectId}, Database: ${configDatabaseId || '(default)'}`);
     } catch (dbInitErr: any) {
-      console.error('[FIREBASE] Error getting Firestore instance:', dbInitErr.message);
-      db = getFirestore(firebaseAdminApp);
+      console.error('[FIREBASE] Error getting specialized Firestore instance, trying default:', dbInitErr.message);
+      try {
+        db = getFirestore(firebaseAdminApp);
+        console.log('Fallback to default Firestore instance succeeded.');
+      } catch (fallbackErr: any) {
+        console.error('[CRITICAL] Both specialized and default Admin Firestore initializations failed:', fallbackErr.message);
+        db = null;
+      }
     }
     
     // IF there's no auth/service account, Firebase Admin will attempt to use default compute credentials 
@@ -156,6 +162,9 @@ async function startServer() {
     });
 
     app.post('/api/verify-task', async (req, res) => {
+      if (!db) {
+        return res.status(503).json({ error: 'Database service is unavailable. Please try again later.' });
+      }
       const { userId, taskId, screenshotBase64 } = req.body;
       if (!userId || !taskId || !screenshotBase64) return res.status(400).json({ error: 'Missing fields' });
 
@@ -181,6 +190,9 @@ async function startServer() {
     });
 
     app.get('/api/export-transactions', async (req, res) => {
+      if (!db) {
+        return res.status(503).json({ error: 'Database service is unavailable. Please try again later.' });
+      }
       const { userId, format } = req.query;
       if (!userId) return res.status(400).json({ error: 'User ID required' });
 
@@ -214,6 +226,9 @@ async function startServer() {
     });
 
     app.post('/api/admin/draw-giveaway', async (req, res) => {
+      if (!db) {
+        return res.status(503).json({ error: 'Database service is unavailable. Please try again later.' });
+      }
       console.log('[GIVEAWAY] Draw requested');
       try {
         console.log('[GIVEAWAY] Fetching eligible users...');
@@ -305,6 +320,9 @@ async function startServer() {
     });
 
     app.post('/api/staking/sync', async (req, res) => {
+      if (!db) {
+        return res.status(503).json({ error: 'Database service is unavailable. Please try again later.' });
+      }
       const { userId } = req.body;
       if (!userId) return res.status(400).json({ error: 'User ID required' });
 
